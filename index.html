@@ -1,0 +1,3154 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Văn Phòng 3D Trợ Lý AI - Ban CHQS Phường Nam Gia Nghĩa</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts tiếng Việt sắc nét -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&display=swap" rel="stylesheet">
+
+  <!-- Chỉ nạp duy nhất lõi Three.js r128 ổn định tuyệt đối -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <style>
+    * {
+      font-family: 'Be Vietnam Pro', sans-serif;
+      box-sizing: border-box;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #cfe8fc;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #canvas-container {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      background: linear-gradient(180deg, #bfe0fb 0%, #e4f2fd 100%);
+      touch-action: none;
+    }
+    #canvas-container canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+      outline: none;
+    }
+    /* Nhãn nổi 2D bám tọa độ 3D của từng phòng & nhân vật */
+    .room-label-3d {
+      position: absolute;
+      transform: translate(-50%, -100%);
+      pointer-events: auto;
+      cursor: pointer;
+      transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+      z-index: 10;
+    }
+    .room-label-3d:hover {
+      transform: translate(-50%, -108%) scale(1.07);
+      z-index: 25;
+    }
+    .room-label-3d.active {
+      transform: translate(-50%, -112%) scale(1.1);
+      z-index: 30;
+    }
+    /* Thanh cuộn tinh gọn */
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: rgba(20, 45, 29, 0.05);
+      border-radius: 9999px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(34, 84, 52, 0.35);
+      border-radius: 9999px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb:hover {
+      background: rgba(34, 84, 52, 0.6);
+    }
+    @keyframes pulseGold {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.75); }
+      50% { box-shadow: 0 0 0 8px rgba(250, 204, 21, 0); }
+    }
+    .pulse-gold {
+      animation: pulseGold 2s infinite;
+    }
+    .selectable-text {
+      user-select: text;
+    }
+  </style>
+</head>
+<body class="text-slate-800">
+
+  <!-- Khung render không gian 3D (kèm nền sáng chống đen màn hình) -->
+  <div id="canvas-container"></div>
+
+  <!-- Sơ đồ mặt bằng 2D dự phòng tự động bật CHỈ KHI trình duyệt khóa WebGL -->
+  <div id="fallback-2d" class="hidden fixed inset-0 z-10 flex items-center justify-center p-4 pt-20 pb-24 bg-[#e2f0e8]">
+    <div class="max-w-4xl w-full bg-white/95 rounded-3xl p-5 shadow-2xl border-2 border-emerald-900/20 space-y-4">
+      <div class="text-center">
+        <span class="px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-bold">Chế độ Sơ đồ Mặt bằng Tương tác (Trình duyệt đang tắt tăng tốc 3D WebGL)</span>
+        <h2 class="text-lg font-extrabold text-[#143622] mt-1">SƠ ĐỒ DOANH TRẠI BAN CHQS PHƯỜNG NAM GIA NGHĨA (CHỮ U)</h2>
+      </div>
+      <div id="fallback-2d-grid" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
+    </div>
+  </div>
+
+  <!-- Lớp nhãn tên phòng & trợ lý 3D -->
+  <div id="labels-layer" class="fixed inset-0 pointer-events-none z-10 overflow-hidden"></div>
+
+  <!-- THANH TIÊU ĐỀ & ĐIỀU HƯỚNG GÓC NHÌN CAMERA PHÍA TRÊN -->
+  <header class="fixed top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+    <!-- Biểu trưng Ban CHQS Phường -->
+    <div class="pointer-events-auto flex items-center gap-3 bg-[#143622]/95 text-white px-3.5 py-2 rounded-2xl shadow-xl border border-amber-400/60 backdrop-blur-md">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-700 to-red-900 border-2 border-amber-400 flex items-center justify-center shadow-inner shrink-0">
+        <svg class="w-6 h-6 text-amber-300 drop-shadow" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2l2.9 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l7.1-1.01L12 2z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-amber-300">Ban CHQS Phường Nam Gia Nghĩa</span>
+          <span class="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/25 text-emerald-200 border border-emerald-400/30">Chữ U 3D</span>
+        </div>
+        <h1 class="text-sm sm:text-base font-extrabold tracking-tight text-white leading-tight">
+          VĂN PHÒNG 3D TRỢ LÝ AI AGENT
+        </h1>
+      </div>
+    </div>
+
+    <!-- Bộ nút chuyển góc nhìn Camera 3D nhanh & Nút Mở/Đóng Bảng AI -->
+    <div class="pointer-events-auto flex flex-wrap items-center gap-1 bg-white/95 backdrop-blur-md p-1.5 rounded-2xl shadow-lg border border-emerald-900/15">
+      <button onclick="setCameraPreset('overview')" class="cam-btn px-2.5 py-1.5 rounded-xl text-xs font-bold bg-[#1b432c] text-white hover:bg-[#255c3c] transition flex items-center gap-1" data-preset="overview">
+        <span>🏛️</span><span>Toàn cảnh Chữ U</span>
+      </button>
+      <button onclick="setCameraPreset('gate')" class="cam-btn px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:bg-emerald-50 transition flex items-center gap-1" data-preset="gate">
+        <span>⛩️</span><span>Cổng Ban CHQS</span>
+      </button>
+      <button onclick="setCameraPreset('hall')" class="cam-btn px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:bg-emerald-50 transition flex items-center gap-1" data-preset="hall">
+        <span>🤝</span><span>Đại sảnh Họp</span>
+      </button>
+      <button onclick="setCameraPreset('leftWing')" class="cam-btn px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:bg-emerald-50 transition flex items-center gap-1" data-preset="leftWing">
+        <span>⭐</span><span>Dãy Trái</span>
+      </button>
+      <button onclick="setCameraPreset('rightWing')" class="cam-btn px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:bg-emerald-50 transition flex items-center gap-1" data-preset="rightWing">
+        <span>📣</span><span>Dãy Phải</span>
+      </button>
+      <button onclick="setCameraPreset('rearWing')" class="cam-btn px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:bg-emerald-50 transition flex items-center gap-1" data-preset="rearWing">
+        <span>🍽️</span><span>Khu Hậu cần</span>
+      </button>
+      <div class="h-5 w-[1px] bg-slate-200 mx-0.5"></div>
+      <button id="btn-toggle-drawer" onclick="toggleWorkspaceDrawer()" class="px-2.5 py-1.5 rounded-xl text-xs font-extrabold bg-amber-400 hover:bg-amber-500 text-[#143622] transition flex items-center gap-1 shadow-sm">
+        <span>🤖</span><span>Bảng AI</span>
+      </button>
+      <button onclick="toggleApiSettings()" title="Cấu hình Gemini API Key & Hướng dẫn đưa lên Web" class="p-1.5 rounded-xl text-slate-600 hover:bg-amber-50 hover:text-amber-700 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- THANH HƯỚNG DẪN THAO TÁC CHUỘT / CẢM ỨNG GÓC TRÁI DƯỚI -->
+  <div class="fixed bottom-20 left-3 z-20 hidden xl:flex items-center gap-2 bg-[#143622]/90 text-emerald-50 text-xs px-3.5 py-2 rounded-2xl backdrop-blur-md border border-amber-400/30 shadow-lg">
+    <span class="text-amber-300">🎮</span>
+    <span><b>Kéo chuột trái:</b> Xoay 360° • <b>Chuột phải / Shift+Kéo:</b> Di chuyển • <b>Cuộn:</b> Thu phóng • <b>Nhấp vào phòng:</b> Mở Trợ lý AI</span>
+  </div>
+
+  <!-- THANH CHỌN NHANH PHÒNG BAN & TRỢ LÝ BÊN DƯỚI -->
+  <nav class="fixed bottom-3 left-3 right-3 z-20 flex justify-center pointer-events-none">
+    <div id="quick-dock" class="pointer-events-auto flex items-center gap-1.5 overflow-x-auto max-w-full bg-[#143622]/95 backdrop-blur-md p-1.5 rounded-2xl shadow-2xl border border-amber-400/40 custom-scroll">
+      <!-- Render tự động bằng JS -->
+    </div>
+  </nav>
+
+  <!-- BẢNG TÁC NGHIỆP AI AGENT 4 TAB (BÊN PHẢI - THU GỌN ĐƯỢC) -->
+  <aside id="workspace-drawer" class="fixed top-3 right-3 bottom-20 w-[calc(100vw-1.5rem)] sm:w-[490px] lg:w-[540px] z-30 bg-white/96 backdrop-blur-xl rounded-3xl shadow-2xl border border-emerald-900/20 flex flex-col overflow-hidden transition-all duration-300 translate-x-[115%] opacity-0 pointer-events-none">
+
+    <!-- Header Bảng Tác Nghiệp -->
+    <div class="bg-gradient-to-r from-[#143622] via-[#1d4d31] to-[#143622] text-white p-4 border-b border-amber-400/40 shrink-0">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div id="drawer-avatar" class="w-12 h-12 rounded-2xl bg-amber-400/20 border-2 border-amber-300 flex flex-col items-center justify-center shrink-0 shadow-inner">
+            <span id="drawer-icon" class="text-lg leading-none">🪖</span>
+            <span id="drawer-code" class="text-[10px] font-extrabold text-amber-300 mt-0.5">TL-01</span>
+          </div>
+          <div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span id="drawer-rank" class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-red-700/90 text-amber-200 border border-amber-400/40">Phòng Chuyên ngành</span>
+              <span id="drawer-skill-badge" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/25 text-emerald-200 border border-emerald-400/30">⚡ 1 Skill</span>
+            </div>
+            <h2 id="drawer-title" class="text-base font-extrabold text-white mt-1 leading-snug">P. TL Kế hoạch Tổng hợp</h2>
+            <p id="drawer-subtitle" class="text-xs text-emerald-100/85 line-clamp-1">Điều phối liên ngành, văn thư NĐ 30, báo cáo tổng hợp</p>
+          </div>
+        </div>
+        <button onclick="closeDrawer()" class="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition shrink-0" title="Thu gọn bảng tác nghiệp">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- 4 Tab Chức Năng Đúng Chuẩn -->
+      <div class="grid grid-cols-4 gap-1 mt-3.5 bg-black/25 p-1 rounded-2xl">
+        <button onclick="switchTab('advise')" id="tab-btn-advise" class="tab-btn py-1.5 px-1 rounded-xl text-[11px] sm:text-xs font-bold bg-amber-400 text-[#143622] shadow transition">
+          ✍️ Tham mưu AI
+        </button>
+        <button onclick="switchTab('learn')" id="tab-btn-learn" class="tab-btn py-1.5 px-1 rounded-xl text-[11px] sm:text-xs font-semibold text-emerald-100 hover:bg-white/10 transition">
+          🎓 Học Skill
+        </button>
+        <button onclick="switchTab('skills')" id="tab-btn-skills" class="tab-btn py-1.5 px-1 rounded-xl text-[11px] sm:text-xs font-semibold text-emerald-100 hover:bg-white/10 transition">
+          ⚡ Kho Skill
+        </button>
+        <button onclick="switchTab('cabinet')" id="tab-btn-cabinet" class="tab-btn py-1.5 px-1 rounded-xl text-[11px] sm:text-xs font-semibold text-emerald-100 hover:bg-white/10 transition">
+          📁 Hồ sơ &amp; Web
+        </button>
+      </div>
+    </div>
+
+    <!-- Nội dung các Tab -->
+    <div class="flex-1 overflow-y-auto p-4 custom-scroll space-y-4">
+
+      <!-- TAB 1: THAM MƯU AI & PHỐI HỢP LIÊN NGÀNH -->
+      <div id="tab-advise" class="space-y-3.5">
+        <!-- Chọn Loại văn bản -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div>
+            <label for="doc-type-select" class="block text-[11px] font-bold text-slate-700 mb-1">📑 Loại văn bản tham mưu:</label>
+            <select id="doc-type-select" class="w-full rounded-xl border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-emerald-700">
+              <option value="Kế hoạch CTĐ, CTCT">Kế hoạch CTĐ, CTCT</option>
+              <option value="Nghị quyết Chi bộ Quân sự">Nghị quyết Chi bộ Quân sự</option>
+              <option value="Báo cáo tuần / tháng / quý">Báo cáo tuần / tháng / quý</option>
+              <option value="Bài phát biểu / Đề cương tuyên truyền">Bài phát biểu / Đề cương tuyên truyền</option>
+              <option value="Kế hoạch Công tác Dân vận">Kế hoạch Công tác Dân vận</option>
+              <option value="Phiếu thẩm tra / Bảo vệ an ninh">Phiếu thẩm tra / Bảo vệ an ninh</option>
+              <option value="Kế hoạch Chính sách hậu phương">Kế hoạch Chính sách hậu phương</option>
+              <option value="Kế hoạch Phối hợp Đoàn thể">Kế hoạch Phối hợp Đoàn thể</option>
+            </select>
+          </div>
+          <div class="flex flex-col justify-end">
+            <button id="btn-coord-trigger" onclick="triggerInterdepartmentalMeeting()" class="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-red-700 to-amber-700 hover:from-red-800 hover:to-amber-800 text-amber-100 text-xs font-extrabold shadow flex items-center justify-center gap-1.5 transition">
+              <span>🤝</span>
+              <span>Phối hợp Liên ngành</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Bảng tùy chọn Hiệp đồng Liên ngành (hiện khi bấm Phối hợp Liên ngành hoặc chọn Đại sảnh) -->
+        <div id="coord-panel" class="hidden bg-red-50/90 border border-red-200 rounded-2xl p-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-extrabold text-red-900">🤝 HỌP GIAO BAN HIỆP ĐỒNG TẠI ĐẠI SẢNH (6 RÕ)</span>
+            <button onclick="toggleCoordPanel(false)" class="text-[11px] font-bold text-slate-500 hover:text-red-700">Ẩn</button>
+          </div>
+          <p class="text-[11px] text-slate-700">Các phòng trợ lý được chọn bên dưới sẽ bắn tia kết nối 3D về Đại sảnh và cùng lập bảng phân công <b>6 Rõ</b>:</p>
+          <div id="coord-checkboxes" class="flex flex-wrap gap-1.5"></div>
+          <button id="btn-run-coord" onclick="runCoordinationMission()" class="w-full py-2 px-3 rounded-xl bg-red-800 hover:bg-red-900 text-amber-200 text-xs font-extrabold shadow transition">
+            ⚡ Xuất Kế hoạch Hiệp đồng Liên ngành (6 Rõ)
+          </button>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs font-bold text-slate-700">📋 Mẫu lệnh giao việc nhanh:</span>
+            <span id="active-skills-indicator" class="text-[11px] font-semibold text-emerald-700">Đang nạp 1 Skill</span>
+          </div>
+          <div id="quick-prompts" class="flex flex-wrap gap-1.5"></div>
+        </div>
+
+        <div>
+          <label for="task-input" class="block text-xs font-bold text-slate-700 mb-1">Nội dung chỉ đạo / Yêu cầu soạn thảo văn bản:</label>
+          <textarea id="task-input" rows="3" class="w-full rounded-2xl border border-slate-300 focus:border-emerald-700 focus:ring-2 focus:ring-emerald-600/20 p-3 text-sm text-slate-800 bg-slate-50/70 transition outline-none" placeholder="Nhập yêu cầu cụ thể (ví dụ: Dự thảo Nghị quyết Chi bộ Quân sự phường lãnh đạo công tác tuyển chọn gọi công dân nhập ngũ năm 2027)..."></textarea>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button id="btn-generate" onclick="runAssistantTask()" class="flex-1 py-2.5 px-4 rounded-2xl bg-gradient-to-r from-[#1b432c] to-[#265e3d] hover:from-[#143622] hover:to-[#1d4d31] text-white font-bold text-sm shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 transition">
+            <span>🪖</span>
+            <span id="btn-generate-text">Giao Trợ lý Tham mưu</span>
+          </button>
+          <button onclick="clearTaskOutput()" class="py-2.5 px-3 rounded-2xl border border-slate-200 hover:bg-slate-100 text-slate-600 text-xs font-semibold transition">
+            Làm mới
+          </button>
+        </div>
+
+        <!-- Kết quả dự thảo văn bản -->
+        <div id="output-card" class="hidden rounded-2xl border border-emerald-900/15 bg-[#fcfcf9] shadow-inner overflow-hidden">
+          <div class="bg-emerald-900/5 px-3.5 py-2 border-b border-emerald-900/10 flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-extrabold text-[#1b432c] flex items-center gap-1.5">
+              <span>📄</span><span>DỰ THẢO VĂN BẢN CHUẨN THỂ THỨC</span>
+            </span>
+            <div class="flex items-center gap-1.5">
+              <button onclick="copyDraftText('ai-output-content')" class="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-emerald-50 text-slate-700 text-[11px] font-semibold transition">
+                📋 Sao chép
+              </button>
+              <button onclick="downloadDocFile('ai-output-content', selectedRoomId)" class="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-emerald-50 text-emerald-800 text-[11px] font-semibold transition">
+                📥 Xuất file Word (.doc)
+              </button>
+              <button onclick="sendDraftToLearn()" class="px-2.5 py-1 rounded-lg bg-amber-100 border border-amber-300 hover:bg-amber-200 text-amber-900 text-[11px] font-bold transition">
+                🎓 Sửa &amp; Tạo Skill
+              </button>
+            </div>
+          </div>
+          <div id="ai-output-content" class="p-4 text-sm text-slate-800 leading-relaxed whitespace-pre-wrap selectable-text max-h-[340px] overflow-y-auto custom-scroll"></div>
+        </div>
+      </div>
+
+      <!-- TAB 2: HỌC SKILL (CHUẨN HÓA TỪ VĂN BẢN CHÍNH TRỊ VIÊN ĐÃ SỬA) -->
+      <div id="tab-learn" class="hidden space-y-3.5">
+        <div class="bg-emerald-50/90 border border-emerald-200 rounded-2xl p-3 text-xs text-emerald-950">
+          <div class="font-extrabold text-emerald-900 flex items-center gap-1.5">
+            <span>🎓</span><span>HỌC SKILL TỪ VĂN BẢN CHUẨN (DIFF-LEARNING)</span>
+          </div>
+          <p class="mt-1 text-emerald-800 leading-relaxed">
+            Dán hoặc tải tệp <b>Bản chuẩn Chính trị viên đã sửa (V2)</b> cùng bản nháp (V1). Trợ lý sẽ phân tích khác biệt thuật ngữ quân sự, bố cục và văn phong chỉ huy để đóng gói thành <b>Skill cố định</b>.
+          </p>
+        </div>
+
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-700">Huấn luyện cho: <b id="learn-agent-name" class="text-emerald-800">Trợ lý</b></span>
+          <button onclick="fillSampleDiff()" class="text-[11px] font-bold text-amber-700 hover:text-amber-800 underline">
+            ✨ Nạp ví dụ mẫu V1 &amp; V2
+          </button>
+        </div>
+
+        <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-bold text-slate-700">1. Bản nháp AI làm trước đó (V1 - Tùy chọn):</label>
+            <label class="cursor-pointer px-2 py-0.5 rounded-lg bg-white border border-slate-300 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">
+              📂 Nạp tệp (.txt/.md)
+              <input type="file" accept=".txt,.md,.doc,.csv" class="hidden" onchange="loadTextFile(event, 'v1-input')" />
+            </label>
+          </div>
+          <textarea id="v1-input" rows="3" class="w-full rounded-xl border border-slate-200 p-2.5 text-xs text-slate-700 bg-white outline-none focus:border-emerald-600" placeholder="Dán bản nháp V1 của AI (hoặc để trống nếu học trực tiếp từ bản chuẩn mẫu V2)..."></textarea>
+        </div>
+
+        <div class="bg-amber-50/60 p-3 rounded-2xl border border-amber-300/80 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-extrabold text-amber-950">2. Bản chuẩn Chính trị viên đã sửa / duyệt (V2 - Bắt buộc):</label>
+            <label class="cursor-pointer px-2 py-0.5 rounded-lg bg-amber-100 border border-amber-300 text-[11px] font-bold text-amber-900 hover:bg-amber-200">
+              📂 Tải tệp chuẩn V2
+              <input type="file" accept=".txt,.md,.doc,.csv" class="hidden" onchange="loadTextFile(event, 'v2-input')" />
+            </label>
+          </div>
+          <textarea id="v2-input" rows="4" class="w-full rounded-xl border border-amber-300 p-2.5 text-xs text-slate-800 bg-white outline-none focus:border-amber-600" placeholder="Dán nội dung văn bản chuẩn đã chỉnh sửa hoàn chỉnh để Trợ lý rút kinh nghiệm..."></textarea>
+        </div>
+
+        <button id="btn-extract-skill" onclick="extractAndSaveSkill()" class="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-[#143622] font-extrabold text-sm shadow-lg flex items-center justify-center gap-2 transition">
+          <span>⚡</span>
+          <span id="btn-extract-text">Phân tích Đối chiếu &amp; Đóng gói thành Skill</span>
+        </button>
+      </div>
+
+      <!-- TAB 3: KHO SKILL (QUẢN LÝ, BẬT/TẮT & XUẤT/NHẬP JSON) -->
+      <div id="tab-skills" class="hidden space-y-3.5">
+        <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+          <div>
+            <div class="text-xs font-extrabold text-slate-800">⚡ Kho Kỹ năng (Skills) của phòng</div>
+            <div class="text-[11px] text-slate-500">Tự động lưu trên trình duyệt và sao lưu ra tệp JSON</div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button onclick="exportAllSkillsJSON()" class="px-2.5 py-1.5 rounded-xl bg-white border border-slate-300 hover:bg-emerald-50 text-emerald-900 text-[11px] font-bold shadow-sm">
+              💾 Xuất JSON
+            </button>
+            <label class="cursor-pointer px-2.5 py-1.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-[11px] font-bold shadow-sm">
+              📤 Nhập JSON
+              <input type="file" accept=".json" class="hidden" onchange="importAllSkillsJSON(event)" />
+            </label>
+          </div>
+        </div>
+
+        <div id="skills-list" class="space-y-2.5"></div>
+      </div>
+
+      <!-- TAB 4: HỒ SƠ & LINK WEB (GOOGLE DRIVE + GEMINI GEM + DANH MỤC PHÁP QUY) -->
+      <div id="tab-cabinet" class="hidden space-y-3.5">
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-3">
+          <div class="text-xs font-extrabold text-[#143622] uppercase tracking-wide">🔗 Liên kết Kho Drive &amp; Gemini Gem riêng</div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-700 mb-1">Đường dẫn Thư mục Google Drive (01_PhapQuy / 02_MauChuan / 03_HoSo):</label>
+            <div class="flex gap-1.5">
+              <input id="drive-url-input" type="url" placeholder="https://drive.google.com/drive/folders/..." class="flex-1 rounded-xl border border-slate-300 px-3 py-1.5 text-xs bg-white outline-none focus:border-emerald-700" />
+              <button onclick="openExternalLink('drive-url-input')" class="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shrink-0">
+                Mở Kho Drive ↗
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-700 mb-1">Đường dẫn Google Gemini Gem riêng của phòng:</label>
+            <div class="flex gap-1.5">
+              <input id="gem-url-input" type="url" placeholder="https://gemini.google.com/gem/..." class="flex-1 rounded-xl border border-slate-300 px-3 py-1.5 text-xs bg-white outline-none focus:border-emerald-700" />
+              <button onclick="openExternalLink('gem-url-input')" class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-[#143622] text-xs font-bold shrink-0">
+                Mở Gem ↗
+              </button>
+            </div>
+          </div>
+
+          <button onclick="saveAgentLinks()" class="w-full py-2 rounded-xl bg-[#143622] hover:bg-[#1e4d32] text-white text-xs font-bold transition">
+            💾 Lưu liên kết cho phòng làm việc 3D này
+          </button>
+        </div>
+
+        <div class="bg-white border border-emerald-900/15 rounded-2xl p-3.5">
+          <div class="text-xs font-extrabold text-emerald-900 mb-2">📚 Danh mục Văn bản Pháp quy, Thông tư &amp; Mẫu biểu chuẩn:</div>
+          <ul id="doc-checklist" class="space-y-2 text-xs text-slate-700"></ul>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- MODAL CẤU HÌNH GEMINI API KEY -->
+  <div id="api-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-5 shadow-2xl border border-emerald-900/20 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-extrabold text-[#143622]">⚙️ Cấu hình Kết nối Gemini AI</h3>
+        <button onclick="toggleApiSettings()" class="p-1.5 rounded-xl hover:bg-slate-100 text-slate-500">✕</button>
+      </div>
+      <p class="text-xs text-slate-600 leading-relaxed">
+        Khi bạn đưa tệp HTML này lên web (Netlify Drop / GitHub Pages) hoặc chạy trên máy tính cá nhân, hãy dán <b>Gemini API Key</b> vào ô dưới đây để các Trợ lý AI suy luận trực tuyến (nếu chưa có key, hệ thống vẫn hoạt động bình thường theo khung mẫu chuẩn quân sự nội bộ):
+      </p>
+      <div>
+        <label class="block text-xs font-bold text-slate-700 mb-1">Gemini API Key (Tùy chọn):</label>
+        <input id="custom-api-key" type="password" placeholder="AIzaSy..." class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs outline-none focus:border-emerald-700" />
+      </div>
+      <div class="flex justify-end gap-2">
+        <button onclick="toggleApiSettings()" class="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50">Đóng</button>
+        <button onclick="saveCustomApiKey()" class="px-4 py-2 rounded-xl bg-[#143622] text-white text-xs font-bold hover:bg-[#1e4d32]">Lưu cấu hình</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HỆ THỐNG THÔNG BÁO TOAST -->
+  <div id="toast-container" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none"></div>
+
+  <script>
+    // =========================================================================
+    // 1. DỮ LIỆU KIẾN TRÚC PHÒNG BAN CHỮ U & ĐỘI NGŨ CHIBI AI AGENT
+    // =========================================================================
+    const ROOMS_DATA = [
+      {
+        id: 'HALL',
+        code: 'ĐẠI SẢNH',
+        signText: 'PHÒNG HỌP ĐẠI SẢNH',
+        shortName: 'Phòng họp Đại sảnh',
+        fullName: 'Phòng họp Giao ban Đại sảnh Trung tâm',
+        rank: 'Trung tâm Hiệp đồng Liên ngành',
+        wing: 'center',
+        pos: { x: 0, z: 0.2 },
+        camFocus: { radius: 8.5, theta: 0.0, phi: 0.92, target: { x: 0, y: 1.0, z: 0.0 } },
+        colorHex: '#b91c1c',
+        icon: '🤝',
+        isAssistantRoom: false,
+        defaultDocType: 'Kế hoạch CTĐ, CTCT',
+        subtitle: 'Họp giao ban toàn Ban CHQS phường, kích hoạt phối hợp liên ngành 8 trợ lý',
+        quickPrompts: [
+          'Triển khai nhiệm vụ trực sẵn sàng chiến đấu và giao ban tuần Ban CHQS phường',
+          'Họp hiệp đồng công tác tuyển chọn và gọi công dân nhập ngũ năm 2027',
+          'Quán triệt Nghị quyết lãnh đạo thực hiện nhiệm vụ diễn tập chiến đấu phòng thủ'
+        ],
+        checklist: [
+          'Quy chế làm việc của Ban CHQS phường Nam Gia Nghĩa',
+          'Bảng theo dõi tiến độ thực hiện nhiệm vụ theo nguyên tắc "6 rõ"',
+          'Nghị quyết lãnh đạo nhiệm vụ quân sự, quốc phòng địa phương năm'
+        ],
+        defaultSkills: [
+          {
+            id: 'sk-hall-1',
+            name: 'Điều hành giao ban chuẩn mực "7 Dám - 6 Rõ"',
+            category: 'Chỉ huy Điều hành',
+            active: true,
+            rules: [
+              'Tổng hợp ý kiến tham mưu của tất cả các bộ phận ngắn gọn, đi thẳng vào giải pháp.',
+              'Kết luận giao ban phân công rõ đầu mối chủ trì, cơ quan phối hợp và mốc thời gian hoàn thành.'
+            ]
+          }
+        ]
+      },
+      {
+        id: 'CTV',
+        code: 'CTV',
+        signText: 'P. CHÍNH TRỊ VIÊN',
+        shortName: 'Chính trị viên',
+        fullName: 'Đại úy Đào Hữu Thiện - Chính trị viên',
+        rank: 'Chính trị viên Ban CHQS Phường',
+        wing: 'left',
+        pos: { x: -8.8, z: -4.7 },
+        camFocus: { radius: 6.2, theta: 1.48, phi: 0.98, target: { x: -8.5, y: 1.0, z: -4.7 } },
+        colorHex: '#b91c1c',
+        starsCount: 4,
+        icon: '⭐',
+        isAssistantRoom: true,
+        defaultDocType: 'Bài phát biểu / Đề cương tuyên truyền',
+        subtitle: 'Chủ trì công tác Đảng, công tác chính trị; phê duyệt, định hướng chỉ đạo chung',
+        quickPrompts: [
+          'Kết luận Hội nghị Chi bộ Quân sự phường tháng này theo tinh thần 7 dám - 6 rõ',
+          'Bài phát biểu chỉ đạo tại Lễ ra quân huấn luyện và phát động thi đua cao điểm',
+          'Chỉ thị tăng cường quản lý tư tưởng, kỷ luật lực lượng Dân quân thường trực'
+        ],
+        checklist: [
+          'Quy chế làm việc của Chi bộ Quân sự phường Nam Gia Nghĩa',
+          'Nghị quyết lãnh đạo thực hiện nhiệm vụ quân sự, quốc phòng năm',
+          'Sổ tay công tác Chính trị viên Ban CHQS cấp xã/phường',
+          'Chỉ thị về thực hiện "7 dám" và phân công nhiệm vụ "6 rõ"'
+        ],
+        defaultSkills: [
+          {
+            id: 'sk-ctv-1',
+            name: 'Văn phong chỉ huy quyết đoán, ngắn gọn, sâu sắc',
+            category: 'Văn phong chỉ huy',
+            active: true,
+            rules: [
+              'Mở đầu đi thẳng vào trọng tâm đánh giá tình hình, biểu dương mặt mạnh, chỉ rõ khâu yếu cần khắc phục ngay.',
+              'Mọi nhiệm vụ giao cho các bộ phận phải lượng hóa theo nguyên tắc "6 rõ": Rõ người, rõ việc, rõ trách nhiệm, rõ thời gian, rõ sản phẩm, rõ thẩm quyền.',
+              'Khơi dậy tinh thần "7 dám" của cán bộ, đảng viên và chiến sĩ dân quân thường trực.'
+            ]
+          }
+        ]
+      },
+      {
+        id: 'TL-01',
+        code: 'TL-01',
+        signText: 'P. TL KẾ HOẠCH TỔNG HỢP',
+        shortName: 'Kế hoạch TH',
+        fullName: 'Trợ lý Kế hoạch Tổng hợp (TL-01)',
+        rank: 'Dãy Trái • Đầu mối Điều phối',
+        wing: 'left',
+        pos: { x: -8.8, z: -1.7 },
+        camFocus: { radius: 6.2, theta: 1.48, phi: 0.98, target: { x: -8.5, y: 1.0, z: -1.7 } },
+        colorHex: '#15803d',
+        starsCount: 3,
+        icon: '🪖',
+        isAssistantRoom: true,
+        defaultDocType: 'Kế hoạch CTĐ, CTCT',
+        subtitle: 'Điều phối liên ngành, văn thư NĐ 30/2020/NĐ-CP, kế hoạch CTĐ-CTCT, báo cáo định kỳ',
+        quickPrompts: [
+          'Kế hoạch CTĐ, CTCT trong diễn tập chiến đấu phường trong khu vực phòng thủ',
+          'Báo cáo kết quả hoạt động CTĐ, CTCT tháng và phương hướng nhiệm vụ tháng tới',
+          'Bảng phân công nhiệm vụ tổ chức Lễ giao nhận quân theo nguyên tắc 6 rõ'
+        ],
+        checklist: [
+          'Nghị định 30/2020/NĐ-CP ngày 05/3/2020 về công tác văn thư',
+          'Thông tư của Bộ Quốc phòng quy định thể thức văn bản quân sự',
+          'Kế hoạch công tác Đảng, công tác chính trị năm của Ban CHQS phường',
+          'Mẫu báo cáo ngày, tuần, tháng, quý, 6 tháng, năm và bảng phân công 6 rõ'
+        ],
+        defaultSkills: [
+          {
+            id: 'sk-01-1',
+            name: 'Chuẩn thể thức văn bản hành chính quân sự (NĐ 30/2020/NĐ-CP)',
+            category: 'Thể thức & Bố cục',
+            active: true,
+            rules: [
+              'Trình bày đầy đủ Quốc hiệu, Tiêu ngữ hoặc Tiêu đề cơ quan quân sự: BAN CHQS PHƯỜNG NAM GIA NGHĨA.',
+              'Bố cục văn bản kế hoạch gồm 4 phần chặt chẽ: I. Mục đích, yêu cầu; II. Nội dung, chỉ tiêu, biện pháp; III. Thời gian, địa điểm, lực lượng; IV. Tổ chức thực hiện.',
+              'Cuối kế hoạch luôn có bảng phân công nhiệm vụ cụ thể theo 6 rõ.'
+            ]
+          }
+        ]
+      },
+      {
+        id: 'TL-02',
+        code: 'TL-02',
+        signText: 'P. TL TỔ CHỨC',
+        shortName: 'Tổ chức',
+        fullName: 'Trợ lý Tổ chức Xây dựng Đảng (TL-02)',
+        rank: 'Dãy Trái • Xây dựng Đảng',
+        wing: 'left',
+        pos: { x: -8.8, z: 1.3 },
+        camFocus: { radius: 6.2, theta: 1.48, phi: 0.98, target: { x: -8.5, y: 1.0, z: 1.3 } },
+        colorHex: '#b91c1c',
+        starsCount: 2,
+        icon: '🪖',
+        isAssistantRoom: true,
+        defaultDocType: 'Nghị quyết Chi bộ Quân sự',
+        subtitle: 'Nghị quyết Chi bộ Quân sự, Điều lệ Đảng, QĐ 24-QĐ/TW, phát triển đảng viên',
+        quickPrompts: [
+          'Dự thảo Nghị quyết Chi bộ Quân sự lãnh đạo thực hiện nhiệm vụ tháng tới',
+          'Nghị quyết chuyên đề lãnh đạo công tác tuyển chọn và gọi công dân nhập ngũ',
+          'Biên bản sinh hoạt Chi bộ Quân sự định kỳ và phân công đảng viên phụ trách DQTV'
+        ],
+        checklist: [
+          'Điều lệ Đảng và Quy định 24-QĐ/TW, Hướng dẫn 01-HD/TW thi hành Điều lệ Đảng',
+          'Hướng dẫn của Ban Tổ chức Trung ương về Chi bộ Quân sự xã, phường, thị trấn',
+          'Quy định của Quân ủy Trung ương về thể thức văn bản của Đảng trong Quân đội',
+          'Mẫu Nghị quyết lãnh đạo tháng/quý, Nghị quyết chuyên đề và Biên bản sinh hoạt Chi bộ'
+        ],
+        defaultSkills: [
+          {
+            id: 'sk-02-1',
+            name: 'Thể thức Nghị quyết Chi bộ Quân sự chuẩn Đảng trong Quân đội',
+            category: 'Văn bản Đảng',
+            active: true,
+            rules: [
+              'Tiêu đề chuẩn: ĐẢNG BỘ PHƯỜNG NAM GIA NGHĨA / CHI BỘ QUÂN SỰ — * — Số ...-NQ/CB.',
+              'Kết cấu Nghị quyết gồm 2 phần lớn: Phần thứ nhất (Đánh giá kết quả lãnh đạo thực hiện nhiệm vụ thời gian qua) và Phần thứ hai (Phương hướng, mục tiêu, chỉ tiêu, nhiệm vụ và giải pháp lãnh đạo thời gian tới).'
+            ]
+          }
+        ]
+      },
+      {
+        id: 'TL-03',
+        code: 'TL-03',
+        signText: 'P. TL CÁN BỘ',
+        shortName: 'Cán bộ',
+        fullName: 'Trợ lý Cán bộ & Thi đua Khen thưởng (TL-03)',
+        rank: 'Dãy Trái • Công tác Cán bộ',
+        wing: 'left',
+        pos: { x: -8.8, z: 4.3 },
+        camFocus: { radius: 6.2, theta: 1.48, phi: 0.98, target: { x: -8.5, y: 1.0, z: 4.3 } },
+        colorHex: '#0f766e',
+        starsCount: 2,
+        icon: '🪖',
+        isAssistantRoom: true,
+        defaultDocType: 'Báo cáo tuần / tháng / quý',
+        subtitle: 'Luật Sĩ quan, Luật DQTV, Luật DBĐV, đánh giá cán bộ theo "7 dám", khen thưởng',
+        quickPrompts: [
+          'Bản nhận xét, đánh giá cán bộ Ban CHQS phường cuối năm lồng ghép tiêu chí 7 dám',
+          'Tờ trình đề nghị khen thưởng tập thể, cá nhân tiêu biểu trong đợt thi đua cao điểm',
+          'Kế hoạch rà soát, sắp xếp, bổ nhiệm cán bộ khung B đơn vị dự bị động viên'
+        ],
+        checklist: [
+          'Luật Sĩ quan QĐND Việt Nam (sửa đổi, bổ sung) và Luật Dân quân tự vệ',
+          'Luật Lực lượng dự bị động viên và Quy chế công tác cán bộ trong Quân đội',
+          'Thông tư hướng dẫn công tác thi đua, khen thưởng trong QĐND Việt Nam',
+          'Mẫu nhận xét đánh giá cán bộ cuối năm (tiêu chí 7 dám) và tờ trình khen thưởng'
+        ],
+        defaultSkills: [
+          {
+            id: 'sk-03-1',
+            name: 'Đánh giá cán bộ gắn với phẩm chất Bộ đội Cụ Hồ & "7 dám"',
+            category: 'Công tác Cán bộ',
+            active: true,
+            rules: [
+              'Đánh giá toàn diện về bản lĩnh chính trị, phẩm chất đạo đức, lối sống, năng lực tham mưu và tinh thần "7 dám".',
+              'Số liệu biên chế cán bộ Ban CHQS phường, Khu đội trưởng và cán bộ khung B DBĐV phải chính xác, rõ nguồn quy hoạch.'
+            ]
+          }
+        ]
+      },
+      {
+        id: 'TL-05',
+        code: 'TL-05',
+        signText: 'P. TL BẢO VỆ AN NINH',
+        shortName: 'Bảo vệ AN',
+        fullName: 'Trợ lý Bảo vệ An ninh (TL-05)',
+        rank: 'Dãy Trái • Bảo vệ Chính trị Nội bộ',
+        wing: 'left',
+        pos: { x: -8.8, z: 7.3 },
+        camFocus: { radius: 6.2, theta: 1.48, phi: 0.98, target: { x: -8.5, y: 1.0, z: 7.3 } },
+        colorHex: '#1e3a8a',
+        starsCount: 2,
+        icon: '🪖',
+        isAssistantRoom: true,
+        defaultDocType: 'Phiếu thẩm tra / Bảo vệ an ninh',
+        subtitle: 'Quy định 58-QĐ/TW, thẩm tra lý lịch tuyển quân, bảo mật quân sự, an ninh mạng',
+        quickPrompts: [
+          'Kế hoạch bảo vệ an ninh chính trị nội bộ và bảo mật trong diễn tập chiến đấu phường',
+          'Báo cáo kết quả thẩm tra, xét duyệt tiêu chuẩn chính trị thanh niên nhập ngũ',
+          'Quy định quản lý sử dụng mạng xã hội và bảo vệ bí mật quân sự đối với DQTV'
+        ],
+        checklist: [
+          'Quy định 58-QĐ/TW của Bộ Chính trị về bảo vệ chính trị nội bộ Đảng',
+          'Thông tư liên tịch BQP - BCA quy định tiêu chuẩn chính trị tuyển chọn công dân nhập ngũ',
+          'Luật Bảo vệ bí mật nhà nước và quy định an toàn thông tin, an ninh mạng trong Quân đội',
+          'Mẫu phiếu thẩm tra xác minh lý lịch chính trị và biên bản xét duyệt chính trị cấp phường'
+        ],
+        defaultSkills: [
+          {
+            id: 'sk-05-1',
+            name: 'Thẩm định tiêu chuẩn chính trị chặt chẽ, đúng nguyên tắc bảo mật',
+            category: 'Bảo vệ An ninh',
+            active: true,
+            rules: [
+              'Đối chiếu đúng từng điều khoản của Thông tư liên tịch BQP-BCA về tiêu chuẩn chính trị tuyển quân.',
+              'Phân loại rõ độ mật văn bản, bảo đảm an toàn thông tin mạng trong cơ quan quân sự.'
+            ]
+          }
+        ]
+      },
+      {
+        id: 'TL-04',
+        code: 'TL-04',
+        signText: 'P. TL TUYÊN HUẤN',
+        shortName: 'Tuyên huấn',
+        fullName: 'Trợ lý Tuyên huấn (TL-04)',
+        rank: 'Dãy Phải • Tư tưởng & Văn hóa',
+        wing: 'right',
+        pos: { x: 8.8, z: -4.4 },
+        camFocus: { radius: 6.2, theta: -1.48, phi: 0.98, target: { x: 8.5, y: 1.0, z: -4.4 } },
+        colorHex: '#d97706',
+        starsCount: 2,
+        icon: '🪖',
+        isAssistantRoom: true,
+        specialProp: 'speakers',
+        defaultDocType: 'Bài phát biểu / Đề cương tuyên truyền',
+        subtitle: 'Giáo dục chính trị, bài phát biểu, quản lý tư tưởng, tuyên truyền Luật NVQS',
+        quickPrompts: [
+          'Đề cương bài giảng giáo dục chính trị cho lực lượng Dân quân tự vệ năm nay',
+          'Hệ thống khẩu hiệu tuyên truyền trực quan và bài phát thanh tuyên truyền Luật NVQS',
+          'Báo cáo nắm tình hình tư tưởng cán bộ, chiến sĩ DQTV và dư luận nhân dân địa bàn'
+        ],
+        checklist: [
+          'Quy chế công tác giáo dục chính trị tại đơn vị cơ sở trong QĐND Việt Nam',
+          'Quy chế công tác quản lý tư tưởng quân nhân, nắm và định hướng dư luận của TCCT',
+          'Đề cương tuyên truyền Luật Nghĩa vụ quân sự và Luật Dân quân tự vệ',
+          'Mẫu giáo án chính trị, bài phát biểu Chính trị viên và kịch bản phát động thi đua'
+        ],
+        defaultSkills: [
+          {
+            id: 'sk-04-1',
+            name: 'Ngôn ngữ tuyên truyền giàu tính chiến đấu, truyền cảm hứng',
+            category: 'Tuyên huấn',
+            active: true,
+            rules: [
+              'Văn phong hào sảng, giàu hình ảnh, kết hợp nhuần nhuyễn lý luận chính trị với thực tiễn địa phương phường Nam Gia Nghĩa.',
+              'Giáo án chính trị luôn chia rõ 3 phần: Mục đích yêu cầu; Nội dung trọng tâm; Phương pháp và liên hệ vận dụng sát thực tiễn đơn vị.'
+            ]
+          }
+        ]
+      },
+      {
+        id: 'TL-06',
+        code: 'TL-06',
+        signText: 'P. TL DÂN VẬN',
+        shortName: 'Dân vận',
+        fullName: 'Trợ lý Dân vận (TL-06)',
+        rank: 'Dãy Phải • Dân vận, Dân tộc & Tôn giáo',
+        wing: 'right',
+        pos: { x: 8.8, z: -0.8 },
+        camFocus: { radius: 6.2, theta: -1.48, phi: 0.98, target: { x: 8.5, y: 1.0, z: -0.8 } },
+        colorHex: '#059669',
+        starsCount: 2,
+        icon: '🪖',
+        isAssistantRoom: true,
+        specialProp: 'map',
+        defaultDocType: 'Kế hoạch Công tác Dân vận',
+        subtitle: 'Dân vận khéo, Quy chế dân chủ cơ sở, công tác dân tộc - tôn giáo địa bàn',
+        quickPrompts: [
+          'Kế hoạch hành quân dã ngoại làm công tác dân vận xây dựng đô thị văn minh',
+          'Báo cáo tình hình địa bàn dân cư, dân tộc, tôn giáo và kết quả phong trào Dân vận khéo',
+          'Kế hoạch phối hợp tuyên truyền vận động đồng bào dân tộc, tôn giáo chấp hành Luật NVQS'
+        ],
+        checklist: [
+          'Quy chế công tác dân vận của Quân đội nhân dân Việt Nam',
+          'Luật Thực hiện dân chủ ở cơ sở và các chỉ thị về công tác dân tộc, tôn giáo',
+          'Hướng dẫn xây dựng mô hình "Dân vận khéo", "Đơn vị dân vận tốt"',
+          'Hồ sơ theo dõi đặc điểm địa bàn (dân cư, tổ dân phố, cơ sở tôn giáo, chức sắc)'
+        ],
+        defaultSkills: [
+          {
+            id: 'sk-06-1',
+            name: 'Gần dân, trọng dân, sát đặc điểm dân cư Tây Nguyên - Lâm Đồng',
+            category: 'Công tác Dân vận',
+            active: true,
+            rules: [
+              'Đề cao phương châm "Nghe dân nói, nói dân hiểu, làm dân tin", phát huy vai trò già làng, người có uy tín, chức sắc tôn giáo trên địa bàn.',
+              'Gắn hoạt động dân vận của lực lượng DQTV với giúp dân phát triển kinh tế, phòng chống thiên tai.'
+            ]
+          }
+        ]
+      },
+      {
+        id: 'TL-07',
+        code: 'TL-07',
+        signText: 'P. TL CHÍNH SÁCH',
+        shortName: 'Chính sách',
+        fullName: 'Trợ lý Chính sách Hậu phương Quân đội (TL-07)',
+        rank: 'Dãy Phải • Người có công & Đề án 515',
+        wing: 'right',
+        pos: { x: 8.8, z: 2.8 },
+        camFocus: { radius: 6.2, theta: -1.48, phi: 0.98, target: { x: 8.5, y: 1.0, z: 2.8 } },
+        colorHex: '#7c3aed',
+        starsCount: 2,
+        icon: '🪖',
+        isAssistantRoom: true,
+        specialProp: 'archive',
+        defaultDocType: 'Kế hoạch Chính sách hậu phương',
+        subtitle: 'Người có công, QĐ 49/62/142/290, Đề án 515 tìm kiếm quy tập hài cốt liệt sĩ',
+        quickPrompts: [
+          'Kế hoạch thăm hỏi, tặng quà gia đình chính sách, thương binh liệt sĩ dịp 27/7',
+          'Báo cáo rà soát hồ sơ chế độ theo Quyết định 49, 62 và lập bản đồ tìm kiếm Đề án 515',
+          'Tờ trình giải quyết chế độ bảo hiểm y tế, trợ cấp cho gia đình thanh niên nhập ngũ'
+        ],
+        checklist: [
+          'Pháp lệnh Ưu đãi người có công với cách mạng',
+          'Các Quyết định 49/2015/QĐ-TTg, 62/2011/QĐ-TTg, 142/2008/QĐ-TTg, 290/2005/QĐ-TTg',
+          'Hướng dẫn của Ban Chỉ đạo 515 về rà soát hồ sơ, lập bản đồ tìm kiếm quy tập hài cốt liệt sĩ',
+          'Danh sách Mẹ VNAH, thương bệnh binh, gia đình liệt sĩ và mẫu tờ khai xác nhận'
+        ],
+        defaultSkills: [
+          {
+            id: 'sk-07-1',
+            name: 'Chuẩn xác căn cứ pháp lý chế độ chính sách & nghĩa tình hậu phương',
+            category: 'Chính sách',
+            active: true,
+            rules: [
+              'Trích dẫn chính xác số, ngày ban hành các Quyết định của Thủ tướng Chính phủ (49, 62, 142, 290) và Pháp lệnh Ưu đãi người có công.',
+              'Thể hiện sự trân trọng, tri ân sâu sắc; rà soát kỹ đối tượng để bảo đảm không bỏ sót, không trùng lặp.'
+            ]
+          }
+        ]
+      },
+      {
+        id: 'TL-08',
+        code: 'TL-08',
+        signText: 'P. TL CÔNG TÁC QUẦN CHÚNG',
+        shortName: 'CT Quần chúng',
+        fullName: 'Trợ lý Công tác Quần chúng (TL-08)',
+        rank: 'Dãy Phải • Đoàn thể & Phong trào',
+        wing: 'right',
+        pos: { x: 8.8, z: 6.4 },
+        camFocus: { radius: 6.2, theta: -1.48, phi: 0.98, target: { x: 8.5, y: 1.0, z: 6.4 } },
+        colorHex: '#db2777',
+        starsCount: 2,
+        icon: '🪖',
+        isAssistantRoom: true,
+        specialProp: 'trophies',
+        defaultDocType: 'Kế hoạch Phối hợp Đoàn thể',
+        subtitle: 'Phối hợp Đoàn TN, Hội Phụ nữ, Hội CCB, hội trại tòng quân, giao lưu văn nghệ',
+        quickPrompts: [
+          'Kế hoạch phối hợp liên tịch với Đoàn Thanh niên tổ chức Đêm giao lưu tiễn thanh niên nhập ngũ',
+          'Kịch bản chương trình văn nghệ quần chúng và hội thao quốc phòng chào mừng 22/12',
+          'Thư ngỏ vận động xã hội hóa tặng sổ tiết kiệm cho thanh niên lên đường nhập ngũ'
+        ],
+        checklist: [
+          'Quy chế công tác thanh niên, phụ nữ, công đoàn trong Quân đội',
+          'Chương trình phối hợp giữa Ban CHQS với Đoàn TN, Hội LHPN, Hội CCB phường',
+          'Hướng dẫn tổ chức Hội trại tòng quân, hội thao quốc phòng, hội diễn văn nghệ',
+          'Mẫu kế hoạch liên tịch, thư ngỏ vận động và kịch bản đêm giao lưu'
+        ],
+        defaultSkills: [
+          {
+            id: 'sk-08-1',
+            name: 'Sôi nổi, sáng tạo, gắn kết sức trẻ đoàn thể địa phương',
+            category: 'Công tác Quần chúng',
+            active: true,
+            rules: [
+              'Xây dựng kịch bản chi tiết theo từng khung giờ, phân công rõ MC, đội văn nghệ xung kích, hậu cần và lực lượng cổ vũ.',
+              'Phát huy vai trò xung kích của Chi đoàn Quân sự phường kết nghĩa với các chi đoàn tổ dân phố.'
+            ]
+          }
+        ]
+      }
+    ];
+
+    // =========================================================================
+    // 2. BỘ NHỚ LƯU TRỮ SKILL & LIÊN KẾT (LOCALSTORAGE)
+    // =========================================================================
+    const STORAGE_KEY = 'banchqs_u_3d_skills_v3';
+    const LINKS_STORAGE_KEY = 'banchqs_u_3d_links_v3';
+    const API_KEY_STORAGE = 'banchqs_u_3d_apikey';
+
+    let skillsStore = {};
+    let linksStore = {};
+    let selectedRoomId = 'CTV';
+    let drawerOpen = false;
+    let currentTab = 'advise';
+    let coordinationBeamsActive = false;
+    let selectedCoordAgents = ['TL-01', 'TL-02', 'TL-04', 'TL-05', 'TL-06'];
+
+    function initMemoryStore() {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) skillsStore = JSON.parse(saved);
+        ROOMS_DATA.forEach(room => {
+          if (!skillsStore[room.id] || !Array.isArray(skillsStore[room.id])) {
+            skillsStore[room.id] = JSON.parse(JSON.stringify(room.defaultSkills));
+          }
+        });
+        saveSkillsStore();
+
+        const savedLinks = localStorage.getItem(LINKS_STORAGE_KEY);
+        if (savedLinks) linksStore = JSON.parse(savedLinks);
+      } catch (e) {
+        ROOMS_DATA.forEach(room => {
+          skillsStore[room.id] = JSON.parse(JSON.stringify(room.defaultSkills));
+        });
+      }
+    }
+
+    function saveSkillsStore() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(skillsStore));
+      } catch (e) {}
+      updateAllLabelsUI();
+      renderQuickDock();
+    }
+
+    function saveLinksStore() {
+      try {
+        localStorage.setItem(LINKS_STORAGE_KEY, JSON.stringify(linksStore));
+      } catch (e) {}
+    }
+
+    // =========================================================================
+    // 3. THÔNG BÁO TOAST (KHÔNG DÙNG ALERT)
+    // =========================================================================
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const styles = {
+        success: 'bg-[#143622] text-emerald-100 border-emerald-400/60',
+        warning: 'bg-amber-900 text-amber-100 border-amber-400/60',
+        error: 'bg-red-900 text-red-100 border-red-400/60',
+        info: 'bg-slate-900 text-white border-slate-600'
+      };
+      const icons = { success: '✅', warning: '⚠️', error: '❌', info: 'ℹ️' };
+      toast.className = `pointer-events-auto flex items-center gap-2 px-4 py-2.5 rounded-2xl border shadow-2xl text-xs font-semibold backdrop-blur-md transition-all duration-300 ${styles[type] || styles.info}`;
+      toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><span>${message}</span>`;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', '-translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3200);
+    }
+
+    // =========================================================================
+    // 4. BỘ ĐIỀU KHIỂN CAMERA CẦU TỰ XÂY DỰNG (ZERO EXTERNAL PLUGINS)
+    // =========================================================================
+    const camState = {
+      radius: 26.5,
+      targetRadius: 26.5,
+      theta: 0.0,
+      targetTheta: 0.0,
+      phi: 0.88,
+      targetPhi: 0.88,
+      target: new THREE.Vector3(0, 0.8, -0.3),
+      desiredTarget: new THREE.Vector3(0, 0.8, -0.3),
+      isDragging: false,
+      dragMode: 'orbit', // 'orbit' | 'pan'
+      prevX: 0,
+      prevY: 0,
+      pinchDist: 0
+    };
+
+    const CAMERA_PRESETS = {
+      overview:  { radius: 26.5, theta: 0.0,   phi: 0.88, target: { x: 0,    y: 0.8, z: -0.3 } },
+      gate:      { radius: 9.2,  theta: 0.0,   phi: 1.15, target: { x: 0,    y: 1.6, z: 9.8  } },
+      hall:      { radius: 9.5,  theta: 0.0,   phi: 0.96, target: { x: 0,    y: 1.0, z: 0.1  } },
+      leftWing:  { radius: 13.5, theta: 1.35,  phi: 0.94, target: { x: -7.5, y: 1.0, z: 1.2  } },
+      rightWing: { radius: 13.5, theta: -1.35, phi: 0.94, target: { x: 7.5,  y: 1.0, z: 1.0  } },
+      rearWing:  { radius: 13.5, theta: 0.0,   phi: 0.92, target: { x: 0,    y: 1.0, z: -8.2 } }
+    };
+
+    function bindBuiltInCameraControls(domElement) {
+      domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+      domElement.addEventListener('mousedown', e => {
+        camState.isDragging = true;
+        camState.prevX = e.clientX;
+        camState.prevY = e.clientY;
+        camState.dragMode = (e.button === 2 || e.shiftKey) ? 'pan' : 'orbit';
+      });
+
+      window.addEventListener('mousemove', e => {
+        if (!camState.isDragging) return;
+        const dx = e.clientX - camState.prevX;
+        const dy = e.clientY - camState.prevY;
+        camState.prevX = e.clientX;
+        camState.prevY = e.clientY;
+
+        if (camState.dragMode === 'orbit') {
+          camState.targetTheta -= dx * 0.0065;
+          camState.targetPhi = Math.max(0.22, Math.min(1.42, camState.targetPhi - dy * 0.0065));
+        } else {
+          const panSpeed = camState.targetRadius * 0.0014;
+          const sinT = Math.sin(camState.theta);
+          const cosT = Math.cos(camState.theta);
+          camState.desiredTarget.x -= (dx * cosT + dy * sinT) * panSpeed;
+          camState.desiredTarget.z -= (-dx * sinT + dy * cosT) * panSpeed;
+          camState.desiredTarget.x = Math.max(-14, Math.min(14, camState.desiredTarget.x));
+          camState.desiredTarget.z = Math.max(-14, Math.min(14, camState.desiredTarget.z));
+        }
+      });
+
+      window.addEventListener('mouseup', () => {
+        camState.isDragging = false;
+      });
+
+      domElement.addEventListener('wheel', e => {
+        e.preventDefault();
+        const factor = e.deltaY > 0 ? 1.08 : 0.92;
+        camState.targetRadius = Math.max(4.2, Math.min(36, camState.targetRadius * factor));
+      }, { passive: false });
+
+      // Hỗ trợ cảm ứng 1 ngón xoay, 2 ngón thu phóng trên điện thoại / máy tính bảng
+      domElement.addEventListener('touchstart', e => {
+        if (e.touches.length === 1) {
+          camState.isDragging = true;
+          camState.dragMode = 'orbit';
+          camState.prevX = e.touches[0].clientX;
+          camState.prevY = e.touches[0].clientY;
+        } else if (e.touches.length === 2) {
+          camState.isDragging = false;
+          camState.pinchDist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+          );
+        }
+      }, { passive: true });
+
+      domElement.addEventListener('touchmove', e => {
+        if (e.touches.length === 1 && camState.isDragging) {
+          const dx = e.touches[0].clientX - camState.prevX;
+          const dy = e.touches[0].clientY - camState.prevY;
+          camState.prevX = e.touches[0].clientX;
+          camState.prevY = e.touches[0].clientY;
+          camState.targetTheta -= dx * 0.007;
+          camState.targetPhi = Math.max(0.22, Math.min(1.42, camState.targetPhi - dy * 0.007));
+        } else if (e.touches.length === 2 && camState.pinchDist > 0) {
+          const dist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+          );
+          const scale = camState.pinchDist / Math.max(10, dist);
+          camState.pinchDist = dist;
+          camState.targetRadius = Math.max(4.2, Math.min(36, camState.targetRadius * scale));
+        }
+      }, { passive: true });
+
+      domElement.addEventListener('touchend', () => {
+        camState.isDragging = false;
+        camState.pinchDist = 0;
+      });
+    }
+
+    function updateCameraTransform() {
+      if (!camera) return;
+      camState.radius += (camState.targetRadius - camState.radius) * 0.1;
+      camState.theta += (camState.targetTheta - camState.theta) * 0.1;
+      camState.phi += (camState.targetPhi - camState.phi) * 0.1;
+      camState.target.lerp(camState.desiredTarget, 0.1);
+
+      const sinPhi = Math.sin(camState.phi);
+      camera.position.x = camState.target.x + camState.radius * sinPhi * Math.sin(camState.theta);
+      camera.position.y = camState.target.y + camState.radius * Math.cos(camState.phi);
+      camera.position.z = camState.target.z + camState.radius * sinPhi * Math.cos(camState.theta);
+      camera.lookAt(camState.target);
+    }
+
+    function setCameraPreset(presetName) {
+      const p = CAMERA_PRESETS[presetName];
+      if (!p) return;
+      camState.targetRadius = p.radius;
+      camState.targetTheta = p.theta;
+      camState.targetPhi = p.phi;
+      camState.desiredTarget.set(p.target.x, p.target.y, p.target.z);
+
+      document.querySelectorAll('.cam-btn').forEach(btn => {
+        if (btn.dataset.preset === presetName) {
+          btn.className = 'cam-btn px-2.5 py-1.5 rounded-xl text-xs font-bold bg-[#1b432c] text-white hover:bg-[#255c3c] transition flex items-center gap-1';
+        } else {
+          btn.className = 'cam-btn px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:bg-emerald-50 transition flex items-center gap-1';
+        }
+      });
+    }
+
+    // =========================================================================
+    // 5. TEXTURE GENERATOR SÁNG RÕ CHO BIỂN HIỆU, SÀN & CỜ TỔ QUỐC
+    // =========================================================================
+    function createSignboardTexture(text, width = 512, height = 96, fontSize = 32) {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      const grad = ctx.createLinearGradient(0, 0, width, 0);
+      grad.addColorStop(0, '#991b1b');
+      grad.addColorStop(0.5, '#dc2626');
+      grad.addColorStop(1, '#991b1b');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 8;
+      ctx.strokeRect(4, 4, width - 8, height - 8);
+
+      ctx.fillStyle = '#fef08a';
+      ctx.font = `900 ${fontSize}px "Be Vietnam Pro", Arial, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, width / 2, height / 2 + 2);
+
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    function createCourtyardTileTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#d4dfd5';
+      ctx.fillRect(0, 0, 512, 512);
+
+      const step = 64;
+      for (let y = 0; y < 512; y += step) {
+        for (let x = 0; x < 512; x += step) {
+          const isAlt = ((x / step) + (y / step)) % 2 === 0;
+          ctx.fillStyle = isAlt ? '#dce7dd' : '#cdd9ce';
+          ctx.fillRect(x + 2, y + 2, step - 4, step - 4);
+        }
+      }
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(9, 9);
+      return tex;
+    }
+
+    function createRoomWoodTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#deb37e';
+      ctx.fillRect(0, 0, 256, 256);
+      for (let r = 0; r < 8; r++) {
+        ctx.fillStyle = r % 2 === 0 ? '#d6a66e' : '#e3bc8a';
+        ctx.fillRect(0, r * 32, 256, 30);
+        ctx.fillStyle = 'rgba(90, 50, 20, 0.16)';
+        ctx.fillRect(0, (r + 1) * 32 - 2, 256, 2);
+      }
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(3, 3);
+      return tex;
+    }
+
+    function createCeramicTileTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, 256, 256);
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 3;
+      for (let i = 0; i <= 256; i += 64) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 256); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(256, i); ctx.stroke();
+      }
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(4, 3);
+      return tex;
+    }
+
+    function drawStar(ctx, cx, cy, spikes, outerRadius, innerRadius, color) {
+      let rot = (Math.PI / 2) * 3;
+      let x = cx, y = cy;
+      const step = Math.PI / spikes;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - outerRadius);
+      for (let i = 0; i < spikes; i++) {
+        x = cx + Math.cos(rot) * outerRadius;
+        y = cy + Math.sin(rot) * outerRadius;
+        ctx.lineTo(x, y);
+        rot += step;
+        x = cx + Math.cos(rot) * innerRadius;
+        y = cy + Math.sin(rot) * innerRadius;
+        ctx.lineTo(x, y);
+        rot += step;
+      }
+      ctx.lineTo(cx, cy - outerRadius);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    function createDetailedCockadeTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 160;
+      canvas.height = 160;
+      const ctx = canvas.getContext('2d');
+
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.arc(80, 82, 62, Math.PI * 0.15, Math.PI * 0.85, false);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(80, 80, 50, 0, Math.PI * 2);
+      ctx.fillStyle = '#facc15';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(80, 80, 41, 0, Math.PI * 2);
+      ctx.fillStyle = '#dc2626';
+      ctx.fill();
+
+      drawStar(ctx, 80, 80, 5, 34, 13, '#fef08a');
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    function createHallBackdropTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+
+      const grad = ctx.createLinearGradient(0, 0, 1024, 512);
+      grad.addColorStop(0, '#881313');
+      grad.addColorStop(0.5, '#dc2626');
+      grad.addColorStop(1, '#881313');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 1024, 512);
+
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 14;
+      ctx.strokeRect(14, 14, 996, 484);
+
+      ctx.fillStyle = '#fde047';
+      ctx.font = '900 26px "Be Vietnam Pro", Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('ĐẢNG CỘNG SẢN VIỆT NAM QUANG VINH MUÔN NĂM', 512, 64);
+
+      // Cờ Đảng
+      ctx.fillStyle = '#dc2626';
+      ctx.fillRect(85, 105, 230, 155);
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(85, 105, 230, 155);
+      ctx.save();
+      ctx.translate(200, 182);
+      ctx.strokeStyle = '#fde047';
+      ctx.fillStyle = '#fde047';
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.arc(0, 0, 32, -Math.PI * 0.75, Math.PI * 0.45);
+      ctx.stroke();
+      ctx.rotate(-Math.PI / 4);
+      ctx.fillRect(-6, -38, 12, 76);
+      ctx.fillRect(-20, -38, 40, 14);
+      ctx.restore();
+
+      // Cờ Tổ quốc
+      ctx.fillStyle = '#dc2626';
+      ctx.fillRect(335, 105, 230, 155);
+      ctx.strokeStyle = '#facc15';
+      ctx.strokeRect(335, 105, 230, 155);
+      drawStar(ctx, 450, 182, 5, 42, 16, '#fde047');
+
+      // Khung khẩu hiệu QUYẾT THẮNG & 7 DÁM - 6 RÕ
+      ctx.fillStyle = 'rgba(20, 54, 34, 0.92)';
+      ctx.fillRect(600, 105, 340, 155);
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 5;
+      ctx.strokeRect(600, 105, 340, 155);
+
+      drawStar(ctx, 770, 145, 5, 22, 9, '#fde047');
+      ctx.fillStyle = '#fde047';
+      ctx.font = '900 30px "Be Vietnam Pro", Arial, sans-serif';
+      ctx.fillText('QUYẾT THẮNG', 770, 198);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 16px "Be Vietnam Pro", Arial, sans-serif';
+      ctx.fillText('7 DÁM HÀNH ĐỘNG • 6 RÕ THỰC HIỆN', 770, 234);
+
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.fillRect(60, 300, 904, 150);
+      ctx.fillStyle = '#fef08a';
+      ctx.font = '900 28px "Be Vietnam Pro", Arial, sans-serif';
+      ctx.fillText('BAN CHỈ HUY QUÂN SỰ PHƯỜNG NAM GIA NGHĨA', 512, 358);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 22px "Be Vietnam Pro", Arial, sans-serif';
+      ctx.fillText('PHÒNG HỌP GIAO BAN ĐẠI SẢNH • HIỆP ĐỒNG THAM MƯU LIÊN NGÀNH', 512, 412);
+
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    // =========================================================================
+    // 6. DỰNG NHÂN VẬT BỘ ĐỘI CHIBI 3D ĐẤT SÉT CAO CẤP (MESHLAMBERT / PHONG)
+    // =========================================================================
+    function buildClayChibiSoldier(config) {
+      const root = new THREE.Group();
+      root.userData = { roomId: config.id };
+
+      // Chất liệu đất sét mịn sáng rõ (Lambert + Phong dịu nhẹ)
+      const uniformMat = new THREE.MeshLambertMaterial({
+        color: config.id === 'CTV' ? 0x2e6638 : 0x3b7a46
+      });
+      const trousersMat = new THREE.MeshLambertMaterial({ color: 0x2b5933 });
+      const skinMat = new THREE.MeshLambertMaterial({ color: 0xffd5b8 });
+      const hairMat = new THREE.MeshLambertMaterial({ color: 0x1e1b1a });
+      const redMat = new THREE.MeshLambertMaterial({ color: 0xdc2626 });
+      const goldMat = new THREE.MeshPhongMaterial({ color: 0xfacc15, shininess: 80 });
+      const leatherMat = new THREE.MeshLambertMaterial({ color: 0x5c2608 });
+      const shoeMat = new THREE.MeshPhongMaterial({ color: 0x18181b, shininess: 90 });
+      const shirtWhiteMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+
+      // 1. Đôi giày da đen bóng & Ống quần quân phục Chibi
+      [-0.12, 0.12].forEach(lx => {
+        const shoe = new THREE.Mesh(new THREE.SphereGeometry(0.115, 16, 14), shoeMat);
+        shoe.scale.set(0.95, 0.65, 1.35);
+        shoe.position.set(lx, 0.075, 0.05);
+        root.add(shoe);
+
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.112, 0.24, 16), trousersMat);
+        leg.position.set(lx, 0.22, 0.02);
+        root.add(leg);
+      });
+
+      // 2. Thân áo Lễ phục / Quân phục Chibi chi tiết cao
+      const bodyGroup = new THREE.Group();
+      bodyGroup.position.y = 0.58;
+      root.add(bodyGroup);
+
+      const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.285, 0.48, 22), uniformMat);
+      bodyGroup.add(torso);
+
+      const tunicSkirt = new THREE.Mesh(new THREE.CylinderGeometry(0.282, 0.30, 0.14, 22), uniformMat);
+      tunicSkirt.position.y = -0.21;
+      bodyGroup.add(tunicSkirt);
+
+      // Cổ áo sơ mi trắng & Cà vạt xanh quân đội
+      const whiteCollar = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.16, 14), shirtWhiteMat);
+      whiteCollar.rotation.x = Math.PI;
+      whiteCollar.position.set(0, 0.18, 0.16);
+      bodyGroup.add(whiteCollar);
+
+      const tieKnot = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.13, 0.03), new THREE.MeshLambertMaterial({ color: 0x1c3d26 }));
+      tieKnot.position.set(0, 0.15, 0.225);
+      bodyGroup.add(tieKnot);
+
+      // Ve áo, tiết đỏ cổ áo & cầu vai cấp hiệu
+      [-1, 1].forEach(dir => {
+        const lapel = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.18, 0.035), uniformMat);
+        lapel.position.set(dir * 0.095, 0.17, 0.205);
+        lapel.rotation.set(-0.15, dir * 0.25, dir * -0.28);
+        bodyGroup.add(lapel);
+
+        const redTab = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.045, 0.04), redMat);
+        redTab.position.set(dir * 0.105, 0.21, 0.215);
+        redTab.rotation.set(-0.15, dir * 0.25, dir * -0.25);
+        bodyGroup.add(redTab);
+
+        const tabPip = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 8), goldMat);
+        tabPip.position.set(dir * 0.105, 0.21, 0.236);
+        bodyGroup.add(tabPip);
+
+        // Cầu vai đỏ viền vàng + Sao cấp hiệu
+        const board = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.028, 0.18), redMat);
+        board.position.set(dir * 0.23, 0.245, 0);
+        board.rotation.z = dir * -0.18;
+        bodyGroup.add(board);
+
+        const stars = config.starsCount || 2;
+        for (let s = 0; s < Math.min(stars, 4); s++) {
+          const zStar = -0.05 + s * 0.036;
+          const starMesh = new THREE.Mesh(new THREE.SphereGeometry(0.017, 8, 8), goldMat);
+          starMesh.position.set(dir * 0.23, 0.262, zStar);
+          bodyGroup.add(starMesh);
+        }
+
+        const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.085, 0.025), uniformMat);
+        pocket.position.set(dir * 0.125, 0.04, 0.245);
+        pocket.rotation.y = dir * 0.25;
+        bodyGroup.add(pocket);
+      });
+
+      // Hàng 3 cúc áo vàng
+      [0.08, 0.0, -0.08].forEach(by => {
+        const btn = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 8), goldMat);
+        btn.position.set(0, by, 0.265);
+        bodyGroup.add(btn);
+      });
+
+      // Thắt lưng da & khóa vàng
+      const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.284, 0.288, 0.068, 22), leatherMat);
+      belt.position.y = -0.13;
+      bodyGroup.add(belt);
+
+      const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.065, 0.035), goldMat);
+      buckle.position.set(0, -0.13, 0.282);
+      bodyGroup.add(buckle);
+
+      // 3. Cánh tay trái & phải
+      const leftArmPivot = new THREE.Group();
+      leftArmPivot.position.set(-0.29, 0.17, 0);
+      const leftSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.068, 0.31, 14), uniformMat);
+      leftSleeve.position.set(-0.04, -0.13, 0.08);
+      leftSleeve.rotation.set(-0.55, 0, 0.24);
+      leftArmPivot.add(leftSleeve);
+      const leftHand = new THREE.Mesh(new THREE.SphereGeometry(0.065, 14, 14), skinMat);
+      leftHand.position.set(-0.07, -0.26, 0.18);
+      leftArmPivot.add(leftHand);
+      bodyGroup.add(leftArmPivot);
+
+      const rightArmPivot = new THREE.Group();
+      rightArmPivot.position.set(0.29, 0.17, 0);
+      const rightSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.068, 0.31, 14), uniformMat);
+      rightSleeve.position.set(0.04, -0.13, 0.08);
+      rightSleeve.rotation.set(-0.55, 0, -0.24);
+      rightArmPivot.add(rightSleeve);
+      const rightHand = new THREE.Mesh(new THREE.SphereGeometry(0.065, 14, 14), skinMat);
+      rightHand.position.set(0.07, -0.26, 0.18);
+      rightArmPivot.add(rightHand);
+      bodyGroup.add(rightArmPivot);
+
+      // 4. Đầu Chibi Đất sét bầu bĩnh biểu cảm
+      const headGroup = new THREE.Group();
+      headGroup.position.set(0, 1.22, 0);
+      root.add(headGroup);
+
+      const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.41, 28, 28), skinMat);
+      headMesh.scale.set(1.04, 0.98, 0.98);
+      headGroup.add(headMesh);
+
+      [-0.40, 0.40].forEach(earX => {
+        const ear = new THREE.Mesh(new THREE.SphereGeometry(0.078, 12, 12), skinMat);
+        ear.scale.set(0.55, 1.0, 0.75);
+        ear.position.set(earX, -0.04, -0.02);
+        headGroup.add(ear);
+      });
+
+      const hairBack = new THREE.Mesh(
+        new THREE.SphereGeometry(0.422, 24, 24, 0, Math.PI * 2, 0, Math.PI * 0.56),
+        hairMat
+      );
+      hairBack.rotation.x = -0.26;
+      headGroup.add(hairBack);
+
+      const bangs = new THREE.Mesh(
+        new THREE.SphereGeometry(0.39, 18, 14, -Math.PI * 0.4, Math.PI * 0.8, 0, Math.PI * 0.25),
+        hairMat
+      );
+      bangs.rotation.x = 0.25;
+      bangs.position.set(0, 0.14, 0.08);
+      headGroup.add(bangs);
+
+      // Đôi mắt to tròn long lanh có 2 điểm sáng phản chiếu
+      const scleraMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const irisMat = new THREE.MeshPhongMaterial({ color: 0x0f172a, shininess: 100 });
+      const sparkleMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+      [-0.145, 0.145].forEach(ex => {
+        const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.078, 16, 16), scleraMat);
+        sclera.scale.set(0.95, 1.15, 0.42);
+        sclera.position.set(ex, -0.02, 0.375);
+        headGroup.add(sclera);
+
+        const iris = new THREE.Mesh(new THREE.SphereGeometry(0.068, 16, 16), irisMat);
+        iris.scale.set(0.92, 1.14, 0.48);
+        iris.position.set(ex, -0.02, 0.386);
+        headGroup.add(iris);
+
+        const glint1 = new THREE.Mesh(new THREE.SphereGeometry(0.023, 8, 8), sparkleMat);
+        glint1.position.set(ex + 0.022, 0.018, 0.412);
+        headGroup.add(glint1);
+
+        const glint2 = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 8), sparkleMat);
+        glint2.position.set(ex - 0.018, -0.042, 0.410);
+        headGroup.add(glint2);
+
+        const brow = new THREE.Mesh(
+          new THREE.TorusGeometry(0.065, 0.011, 8, 12, Math.PI * 0.65),
+          hairMat
+        );
+        brow.rotation.z = Math.PI * 0.18;
+        brow.position.set(ex, 0.075, 0.375);
+        headGroup.add(brow);
+      });
+
+      const nose = new THREE.Mesh(new THREE.SphereGeometry(0.026, 10, 10), skinMat);
+      nose.position.set(0, -0.075, 0.405);
+      headGroup.add(nose);
+
+      const blushMat = new THREE.MeshBasicMaterial({ color: 0xf472b6, transparent: true, opacity: 0.45 });
+      [-0.225, 0.225].forEach(bx => {
+        const blush = new THREE.Mesh(new THREE.SphereGeometry(0.048, 12, 12), blushMat);
+        blush.scale.set(1.25, 0.7, 0.25);
+        blush.position.set(bx, -0.095, 0.355);
+        headGroup.add(blush);
+      });
+
+      const smile = new THREE.Mesh(
+        new THREE.TorusGeometry(0.055, 0.012, 8, 14, Math.PI * 0.85),
+        new THREE.MeshBasicMaterial({ color: 0x991b1b })
+      );
+      smile.rotation.z = Math.PI * 1.08;
+      smile.position.set(0, -0.135, 0.392);
+      headGroup.add(smile);
+
+      // 5. Mũ Kê-pi QĐNDVN chi tiết cao
+      const kepiGroup = new THREE.Group();
+      kepiGroup.position.set(0, 0.27, 0.02);
+      kepiGroup.rotation.x = -0.06;
+      headGroup.add(kepiGroup);
+
+      const kepiCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.50, 0.37, 0.17, 28), uniformMat);
+      kepiCrown.position.y = 0.15;
+      kepiGroup.add(kepiCrown);
+
+      const kepiDome = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.50, 0.03, 28), uniformMat);
+      kepiDome.position.y = 0.245;
+      kepiGroup.add(kepiDome);
+
+      const crownPiping = new THREE.Mesh(new THREE.TorusGeometry(0.498, 0.014, 8, 32), redMat);
+      crownPiping.rotation.x = Math.PI / 2;
+      crownPiping.position.y = 0.232;
+      kepiGroup.add(crownPiping);
+
+      const redBand = new THREE.Mesh(new THREE.CylinderGeometry(0.375, 0.375, 0.095, 28), redMat);
+      redBand.position.y = 0.03;
+      kepiGroup.add(redBand);
+
+      const goldStrap = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.015, 8, 24, Math.PI), goldMat);
+      goldStrap.position.set(0, -0.01, 0.02);
+      kepiGroup.add(goldStrap);
+
+      [-0.375, 0.375].forEach(sx => {
+        const sideBtn = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), goldMat);
+        sideBtn.position.set(sx, 0.0, 0.02);
+        kepiGroup.add(sideBtn);
+      });
+
+      const visor = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.38, 0.45, 0.026, 24, 1, false, -Math.PI * 0.38, Math.PI * 0.76),
+        shoeMat
+      );
+      visor.position.set(0, -0.022, 0.13);
+      visor.rotation.x = 0.24;
+      kepiGroup.add(visor);
+
+      const cockadeTex = createDetailedCockadeTexture();
+      const cockade = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.088, 0.088, 0.028, 20),
+        new THREE.MeshBasicMaterial({ map: cockadeTex })
+      );
+      cockade.rotation.x = Math.PI / 2;
+      cockade.position.set(0, 0.125, 0.405);
+      kepiGroup.add(cockade);
+
+      root.userData.bodyGroup = bodyGroup;
+      root.userData.headGroup = headGroup;
+      root.userData.leftArmPivot = leftArmPivot;
+      root.userData.rightArmPivot = rightArmPivot;
+      root.userData.saluteProgress = 0;
+
+      const hitBox = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.85, 0.85, 2.0, 12),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      hitBox.position.y = 0.95;
+      hitBox.userData = { roomId: config.id };
+      root.add(hitBox);
+      clickableTargets.push(hitBox);
+
+      return root;
+    }
+
+    // =========================================================================
+    // 7. DỰNG TỪNG PHÒNG LÀM VIỆC RIÊNG BIỆT CÓ TƯỜNG NGĂN, VÁCH KÍNH & NỘI THẤT
+    // =========================================================================
+    function buildPrivateAssistantRoom(room) {
+      const group = new THREE.Group();
+      group.position.set(room.pos.x, 0, room.pos.z);
+
+      const isLeft = room.wing === 'left';
+      const isCommander = room.id === 'CTV';
+      const roomW = 4.8;
+      const roomD = isLeft ? 3.0 : 3.6;
+      const wallH = 2.35;
+
+      const woodFloorMat = new THREE.MeshLambertMaterial({ map: createRoomWoodTexture() });
+      const wallMat = new THREE.MeshLambertMaterial({ color: 0xfdfaf0 });
+      const wainscotMat = new THREE.MeshLambertMaterial({ color: 0x1e5635 });
+      const frameMat = new THREE.MeshLambertMaterial({ color: 0x2d3748 });
+      const glassMat = new THREE.MeshPhongMaterial({
+        color: 0xbae6fd,
+        transparent: true,
+        opacity: 0.28,
+        shininess: 90
+      });
+      const goldMat = new THREE.MeshPhongMaterial({ color: 0xfacc15, shininess: 80 });
+
+      const floor = new THREE.Mesh(new THREE.BoxGeometry(roomW, 0.08, roomD), woodFloorMat);
+      floor.position.y = 0.04;
+      group.add(floor);
+
+      const outerX = isLeft ? -roomW / 2 : roomW / 2;
+      const outerWall = new THREE.Mesh(new THREE.BoxGeometry(0.18, wallH, roomD), wallMat);
+      outerWall.position.set(outerX, wallH / 2, 0);
+      group.add(outerWall);
+
+      const outerBase = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.75, roomD), wainscotMat);
+      outerBase.position.set(outerX, 0.375, 0);
+      group.add(outerBase);
+
+      [-roomD / 2, roomD / 2].forEach(sideZ => {
+        const lowerWall = new THREE.Mesh(new THREE.BoxGeometry(roomW, 0.95, 0.12), wallMat);
+        lowerWall.position.set(0, 0.475, sideZ);
+        group.add(lowerWall);
+
+        const glassPane = new THREE.Mesh(new THREE.BoxGeometry(roomW - 0.15, 1.25, 0.04), glassMat);
+        glassPane.position.set(0, 1.58, sideZ);
+        group.add(glassPane);
+
+        const topBeam = new THREE.Mesh(new THREE.BoxGeometry(roomW, 0.12, 0.14), frameMat);
+        topBeam.position.set(0, 2.25, sideZ);
+        group.add(topBeam);
+      });
+
+      const innerX = isLeft ? roomW / 2 : -roomW / 2;
+      const frontSide1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.95, roomD * 0.45), wallMat);
+      frontSide1.position.set(innerX, 0.475, -roomD * 0.27);
+      group.add(frontSide1);
+
+      const frontGlass = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.25, roomD * 0.45), glassMat);
+      frontGlass.position.set(innerX, 1.58, -roomD * 0.27);
+      group.add(frontGlass);
+
+      const doorHeader = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.24, roomD), frameMat);
+      doorHeader.position.set(innerX, 2.28, 0);
+      group.add(doorHeader);
+
+      const signTex = createSignboardTexture(room.signText, 512, 92, room.signText.length > 20 ? 25 : 30);
+      const signBoard = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.36, 2.15),
+        new THREE.MeshBasicMaterial({ map: signTex })
+      );
+      signBoard.position.set(innerX + (isLeft ? 0.06 : -0.06), 2.52, 0);
+      group.add(signBoard);
+
+      const roomClickBox = new THREE.Mesh(
+        new THREE.BoxGeometry(roomW - 0.3, 1.6, roomD - 0.3),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      roomClickBox.position.set(0, 0.85, 0);
+      roomClickBox.userData = { roomId: room.id };
+      group.add(roomClickBox);
+      clickableTargets.push(roomClickBox);
+
+      const interior = new THREE.Group();
+      interior.rotation.y = isLeft ? Math.PI / 2 : -Math.PI / 2;
+      group.add(interior);
+
+      const deskMat = new THREE.MeshLambertMaterial({ color: isCommander ? 0x7c3f1d : 0x9c5a2c });
+      const deskW = isCommander ? 1.85 : 1.55;
+      const deskD = 0.82;
+      const deskH = 0.72;
+
+      const deskTop = new THREE.Mesh(new THREE.BoxGeometry(deskW, 0.06, deskD), deskMat);
+      deskTop.position.set(0, deskH + 0.08, 0.32);
+      interior.add(deskTop);
+
+      const deskFront = new THREE.Mesh(new THREE.BoxGeometry(deskW - 0.1, deskH - 0.08, 0.05), deskMat);
+      deskFront.position.set(0, deskH / 2 + 0.04, 0.32 + deskD / 2 - 0.05);
+      interior.add(deskFront);
+
+      [[-deskW / 2 + 0.07, 0.0], [deskW / 2 - 0.07, 0.0], [-deskW / 2 + 0.07, 0.62], [deskW / 2 - 0.07, 0.62]].forEach(([lx, lz]) => {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, deskH, 0.06), frameMat);
+        leg.position.set(lx, deskH / 2 + 0.05, lz);
+        interior.add(leg);
+      });
+
+      const monitorStand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.08), frameMat);
+      monitorStand.position.set(0.15, deskH + 0.17, 0.28);
+      interior.add(monitorStand);
+
+      const monitorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.30, 0.03), frameMat);
+      monitorFrame.position.set(0.15, deskH + 0.34, 0.28);
+      monitorFrame.rotation.y = -0.22;
+      interior.add(monitorFrame);
+
+      const screenGlow = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.43, 0.25),
+        new THREE.MeshBasicMaterial({ color: isCommander ? 0xfef08a : 0x34d399 })
+      );
+      screenGlow.position.set(0.146, deskH + 0.34, 0.262);
+      screenGlow.rotation.set(0, Math.PI - 0.22, 0);
+      interior.add(screenGlow);
+
+      const keyboard = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.015, 0.12), new THREE.MeshLambertMaterial({ color: 0x334155 }));
+      keyboard.position.set(0.12, deskH + 0.115, 0.12);
+      interior.add(keyboard);
+
+      const phone = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 0.18), new THREE.MeshLambertMaterial({ color: 0x1e293b }));
+      phone.position.set(-0.55, deskH + 0.13, 0.25);
+      interior.add(phone);
+
+      const folderRed = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.035, 0.32), new THREE.MeshLambertMaterial({ color: 0xdc2626 }));
+      folderRed.position.set(-0.32, deskH + 0.12, 0.32);
+      folderRed.rotation.y = 0.15;
+      interior.add(folderRed);
+
+      const folderGreen = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.03, 0.32), new THREE.MeshLambertMaterial({ color: 0x16a34a }));
+      folderGreen.position.set(-0.30, deskH + 0.15, 0.30);
+      interior.add(folderGreen);
+
+      const cabinet = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.55, 0.42), new THREE.MeshLambertMaterial({ color: 0x854d27 }));
+      cabinet.position.set(-1.05, 0.82, -1.15);
+      interior.add(cabinet);
+
+      const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.10, 0.22, 12), new THREE.MeshLambertMaterial({ color: 0xc2410c }));
+      pot.position.set(1.12, 0.16, -1.05);
+      interior.add(pot);
+      const foliage = new THREE.Mesh(new THREE.DodecahedronGeometry(0.24, 1), new THREE.MeshLambertMaterial({ color: 0x22c55e }));
+      foliage.position.set(1.12, 0.42, -1.05);
+      interior.add(foliage);
+
+      if (isCommander) {
+        [-0.75, 0.75].forEach((fx, i) => {
+          const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.9, 8), goldMat);
+          pole.position.set(fx, 1.0, -1.1);
+          interior.add(pole);
+          const flagCloth = new THREE.Mesh(
+            new THREE.BoxGeometry(0.45, 0.65, 0.03),
+            new THREE.MeshLambertMaterial({ color: i === 0 ? 0xdc2626 : 0xb91c1c })
+          );
+          flagCloth.position.set(fx + (i === 0 ? 0.18 : -0.18), 1.55, -1.05);
+          interior.add(flagCloth);
+        });
+      } else if (room.specialProp === 'speakers') {
+        [-1.1, 1.1].forEach(sx => {
+          const spk = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.36, 0.22), frameMat);
+          spk.position.set(sx, 1.85, -1.25);
+          interior.add(spk);
+        });
+      } else if (room.specialProp === 'map') {
+        const mapBoard = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.75, 0.04), new THREE.MeshLambertMaterial({ color: 0xd1fae5 }));
+        mapBoard.position.set(0.3, 1.55, -1.35);
+        interior.add(mapBoard);
+      } else if (room.specialProp === 'trophies') {
+        const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.04, 0.22, 12), goldMat);
+        cup.position.set(-1.05, 1.72, -1.15);
+        interior.add(cup);
+      }
+
+      const chibi = buildClayChibiSoldier(room);
+      chibi.position.set(0, 0.08, -0.34);
+      interior.add(chibi);
+      chibiMeshes[room.id] = chibi;
+
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.85, 1.02, 28),
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(room.colorHex),
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.35
+        })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(0, 0.095, -0.15);
+      interior.add(ring);
+      haloRings[room.id] = ring;
+
+      scene.add(group);
+    }
+
+    // =========================================================================
+    // 8. DỰNG PHÒNG HỌP ĐẠI SẢNH TRUNG TÂM, CỔNG BAN CHQS & KHU HẬU CẦN SAU
+    // =========================================================================
+    function buildCentralConferenceHall() {
+      const group = new THREE.Group();
+      group.position.set(0, 0, 0.2);
+
+      const floorMat = new THREE.MeshLambertMaterial({ color: 0xfef3c7 });
+      const carpetMat = new THREE.MeshLambertMaterial({ color: 0xb91c1c });
+      const pillarMat = new THREE.MeshLambertMaterial({ color: 0xfdfaf0 });
+      const goldMat = new THREE.MeshPhongMaterial({ color: 0xfacc15, shininess: 80 });
+      const tableMat = new THREE.MeshLambertMaterial({ color: 0x7c3f1d });
+      const chairMat = new THREE.MeshLambertMaterial({ color: 0x334155 });
+
+      const base = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.14, 6.2), floorMat);
+      base.position.y = 0.07;
+      group.add(base);
+
+      const carpet = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.02, 5.4), carpetMat);
+      carpet.position.y = 0.15;
+      group.add(carpet);
+
+      [[-3.5, -2.8], [3.5, -2.8], [-3.5, 2.8], [3.5, 2.8]].forEach(([px, pz]) => {
+        const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 2.75, 18), pillarMat);
+        pillar.position.set(px, 1.45, pz);
+        group.add(pillar);
+
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.18, 0.16, 18), goldMat);
+        cap.position.set(px, 2.82, pz);
+        group.add(cap);
+      });
+
+      const frontBeam = new THREE.Mesh(new THREE.BoxGeometry(7.4, 0.26, 0.22), new THREE.MeshLambertMaterial({ color: 0x991b1b }));
+      frontBeam.position.set(0, 2.85, 2.8);
+      group.add(frontBeam);
+
+      const hallSignTex = createSignboardTexture('PHÒNG HỌP ĐẠI SẢNH', 512, 92, 32);
+      const hallSign = new THREE.Mesh(
+        new THREE.BoxGeometry(3.2, 0.48, 0.12),
+        new THREE.MeshBasicMaterial({ map: hallSignTex })
+      );
+      hallSign.position.set(0, 3.15, 2.82);
+      group.add(hallSign);
+
+      const backWall = new THREE.Mesh(new THREE.BoxGeometry(6.8, 2.65, 0.16), new THREE.MeshLambertMaterial({ color: 0xfdfaf0 }));
+      backWall.position.set(0, 1.42, -2.75);
+      group.add(backWall);
+
+      const backdropTex = createHallBackdropTexture();
+      const backdrop = new THREE.Mesh(
+        new THREE.PlaneGeometry(5.8, 2.35),
+        new THREE.MeshBasicMaterial({ map: backdropTex })
+      );
+      backdrop.position.set(0, 1.48, -2.65);
+      group.add(backdrop);
+
+      const confTable = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.09, 1.65), tableMat);
+      confTable.position.set(0, 0.82, 0.15);
+      group.add(confTable);
+
+      const tablePedestal = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.66, 0.85), tableMat);
+      tablePedestal.position.set(0, 0.48, 0.15);
+      group.add(tablePedestal);
+
+      [-1.35, -0.45, 0.45, 1.35].forEach(cx => {
+        [-1.02, 1.02].forEach(cz => {
+          const chair = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.45, 0.42), chairMat);
+          chair.position.set(cx, 0.38, 0.15 + cz);
+          group.add(chair);
+        });
+      });
+      [-2.15, 2.15].forEach(cx => {
+        const chair = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.48, 0.46), chairMat);
+        chair.position.set(cx, 0.40, 0.15);
+        group.add(chair);
+      });
+
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(2.35, 2.55, 42),
+        new THREE.MeshBasicMaterial({ color: 0xfacc15, side: THREE.DoubleSide, transparent: true, opacity: 0.42 })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(0, 0.165, 0.15);
+      group.add(ring);
+      haloRings['HALL'] = ring;
+
+      const hitBox = new THREE.Mesh(
+        new THREE.BoxGeometry(7.2, 2.4, 5.8),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      hitBox.position.set(0, 1.2, 0);
+      hitBox.userData = { roomId: 'HALL' };
+      group.add(hitBox);
+      clickableTargets.push(hitBox);
+
+      scene.add(group);
+    }
+
+    function buildRearLogisticsWing() {
+      const rearGroup = new THREE.Group();
+      rearGroup.position.set(0, 0, -8.7);
+
+      const wallMat = new THREE.MeshLambertMaterial({ color: 0xfdfaf0 });
+      const greenBaseMat = new THREE.MeshLambertMaterial({ color: 0x1e5635 });
+      const frameMat = new THREE.MeshLambertMaterial({ color: 0x334155 });
+      const tileMat = new THREE.MeshLambertMaterial({ map: createCeramicTileTexture() });
+
+      const floor = new THREE.Mesh(new THREE.BoxGeometry(22.4, 0.1, 4.2), tileMat);
+      floor.position.y = 0.05;
+      rearGroup.add(floor);
+
+      const backWall = new THREE.Mesh(new THREE.BoxGeometry(22.4, 2.5, 0.2), wallMat);
+      backWall.position.set(0, 1.25, -2.0);
+      rearGroup.add(backWall);
+
+      const backBase = new THREE.Mesh(new THREE.BoxGeometry(22.42, 0.8, 0.22), greenBaseMat);
+      backBase.position.set(0, 0.4, -2.0);
+      rearGroup.add(backBase);
+
+      [-11.1, -2.2, 5.2, 11.1].forEach(wx => {
+        const divWall = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.4, 4.1), wallMat);
+        divWall.position.set(wx, 1.2, 0);
+        rearGroup.add(divWall);
+      });
+
+      const frontBeam = new THREE.Mesh(new THREE.BoxGeometry(22.4, 0.24, 0.16), frameMat);
+      frontBeam.position.set(0, 2.38, 2.0);
+      rearGroup.add(frontBeam);
+
+      // 1. PHÒNG ĂN
+      const diningSign = new THREE.Mesh(
+        new THREE.BoxGeometry(2.8, 0.42, 0.1),
+        new THREE.MeshBasicMaterial({ map: createSignboardTexture('PHÒNG ĂN', 420, 84, 34) })
+      );
+      diningSign.position.set(-6.65, 2.68, 2.02);
+      rearGroup.add(diningSign);
+
+      const diningTableMat = new THREE.MeshPhongMaterial({ color: 0xe2e8f0, shininess: 60 });
+      const benchMat = new THREE.MeshLambertMaterial({ color: 0x16a34a });
+      [-9.1, -6.7, -4.3].forEach(tx => {
+        const dTable = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, 2.2), diningTableMat);
+        dTable.position.set(tx, 0.76, -0.1);
+        rearGroup.add(dTable);
+
+        [-0.95, 0.95].forEach(bx => {
+          const bench = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.44, 2.0), benchMat);
+          bench.position.set(tx + bx, 0.25, -0.1);
+          rearGroup.add(bench);
+        });
+      });
+      const serveCounter = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.85, 0.65), diningTableMat);
+      serveCounter.position.set(-6.7, 0.45, -1.55);
+      rearGroup.add(serveCounter);
+
+      // 2. CĂN TIN
+      const canteenSign = new THREE.Mesh(
+        new THREE.BoxGeometry(2.8, 0.42, 0.1),
+        new THREE.MeshBasicMaterial({ map: createSignboardTexture('CĂN TIN', 420, 84, 34) })
+      );
+      canteenSign.position.set(1.5, 2.68, 2.02);
+      rearGroup.add(canteenSign);
+
+      const counterMat = new THREE.MeshLambertMaterial({ color: 0xd97706 });
+      const barCounter = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.92, 0.7), counterMat);
+      barCounter.position.set(1.2, 0.48, -1.1);
+      rearGroup.add(barCounter);
+
+      const fridge = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.85, 0.75), new THREE.MeshLambertMaterial({ color: 0x0ea5e9 }));
+      fridge.position.set(4.1, 0.95, -1.45);
+      rearGroup.add(fridge);
+
+      [0.2, 2.8].forEach(cx => {
+        const roundTop = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.05, 18), new THREE.MeshLambertMaterial({ color: 0xfef3c7 }));
+        roundTop.position.set(cx, 0.72, 0.65);
+        rearGroup.add(roundTop);
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.18, 0.68, 10), frameMat);
+        leg.position.set(cx, 0.36, 0.65);
+        rearGroup.add(leg);
+      });
+
+      // 3. NHÀ VỆ SINH
+      const wcSign = new THREE.Mesh(
+        new THREE.BoxGeometry(3.1, 0.42, 0.1),
+        new THREE.MeshBasicMaterial({ map: createSignboardTexture('NHÀ VỆ SINH', 420, 84, 32) })
+      );
+      wcSign.position.set(8.15, 2.68, 2.02);
+      rearGroup.add(wcSign);
+
+      const stallMat = new THREE.MeshLambertMaterial({ color: 0xbae6fd });
+      [6.2, 7.6, 9.0].forEach(sx => {
+        const stallBack = new THREE.Mesh(new THREE.BoxGeometry(1.25, 1.85, 1.3), stallMat);
+        stallBack.position.set(sx, 0.95, -1.2);
+        rearGroup.add(stallBack);
+      });
+
+      const sinkCounter = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.78, 0.55), new THREE.MeshLambertMaterial({ color: 0xffffff }));
+      sinkCounter.position.set(8.2, 0.42, 0.95);
+      rearGroup.add(sinkCounter);
+
+      const mirror = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.85, 0.04), new THREE.MeshPhongMaterial({ color: 0x93c5fd, shininess: 100 }));
+      mirror.position.set(8.2, 1.35, 1.18);
+      rearGroup.add(mirror);
+
+      scene.add(rearGroup);
+    }
+
+    function buildEntranceGateAndCourtyard() {
+      const gateGroup = new THREE.Group();
+      gateGroup.position.set(0, 0, 10.6);
+
+      const pillarMat = new THREE.MeshLambertMaterial({ color: 0xfef3c7 });
+      const redRoofMat = new THREE.MeshLambertMaterial({ color: 0xb91c1c });
+      const goldMat = new THREE.MeshPhongMaterial({ color: 0xfacc15, shininess: 80 });
+      const ironMat = new THREE.MeshLambertMaterial({ color: 0x1b432c });
+
+      [-2.5, 2.5].forEach(px => {
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.75, 3.4, 0.75), pillarMat);
+        pillar.position.set(px, 1.7, 0);
+        gateGroup.add(pillar);
+
+        const cap = new THREE.Mesh(new THREE.ConeGeometry(0.68, 0.55, 4), redRoofMat);
+        cap.rotation.y = Math.PI / 4;
+        cap.position.set(px, 3.65, 0);
+        gateGroup.add(cap);
+      });
+
+      const gateHeader = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.72, 0.35), redRoofMat);
+      gateHeader.position.set(0, 3.35, 0);
+      gateGroup.add(gateHeader);
+
+      const gateSignTex = createSignboardTexture('BAN CHỈ HUY QUÂN SỰ PHƯỜNG NAM GIA NGHĨA', 1024, 128, 34);
+      const gateFrontBoard = new THREE.Mesh(
+        new THREE.PlaneGeometry(5.6, 0.64),
+        new THREE.MeshBasicMaterial({ map: gateSignTex })
+      );
+      gateFrontBoard.position.set(0, 3.35, 0.19);
+      gateGroup.add(gateFrontBoard);
+
+      const gateBackBoard = new THREE.Mesh(
+        new THREE.PlaneGeometry(5.6, 0.64),
+        new THREE.MeshBasicMaterial({ map: gateSignTex })
+      );
+      gateBackBoard.rotation.y = Math.PI;
+      gateBackBoard.position.set(0, 3.35, -0.19);
+      gateGroup.add(gateBackBoard);
+
+      // Barie chắn cổng sọc đỏ - trắng
+      const bariePost = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.05, 0.28), redRoofMat);
+      bariePost.position.set(-2.05, 0.52, -0.45);
+      gateGroup.add(bariePost);
+
+      for (let b = 0; b < 8; b++) {
+        const seg = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.048, 0.048, 0.48, 10),
+          new THREE.MeshLambertMaterial({ color: b % 2 === 0 ? 0xdc2626 : 0xffffff })
+        );
+        seg.rotation.z = Math.PI / 2;
+        seg.position.set(-1.75 + b * 0.48, 0.92, -0.45);
+        gateGroup.add(seg);
+      }
+
+      [-7.0, 7.0].forEach(wx => {
+        const wallBase = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.75, 0.3), pillarMat);
+        wallBase.position.set(wx, 0.375, 0);
+        gateGroup.add(wallBase);
+
+        const fence = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.95, 0.08), ironMat);
+        fence.position.set(wx, 1.22, 0);
+        gateGroup.add(fence);
+      });
+
+      // Bốt trực ban & Chiến sĩ Dân quân trực gác Chibi
+      const guardBox = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.2, 1.5), pillarMat);
+      guardBox.position.set(-4.0, 1.1, -1.1);
+      gateGroup.add(guardBox);
+
+      const guardRoof = new THREE.Mesh(new THREE.ConeGeometry(1.3, 0.6, 4), redRoofMat);
+      guardRoof.rotation.y = Math.PI / 4;
+      guardRoof.position.set(-4.0, 2.5, -1.1);
+      gateGroup.add(guardRoof);
+
+      const guardSign = new THREE.Mesh(
+        new THREE.BoxGeometry(1.2, 0.28, 0.08),
+        new THREE.MeshBasicMaterial({ map: createSignboardTexture('TRỰC BAN', 256, 64, 32) })
+      );
+      guardSign.position.set(-4.0, 2.05, -0.32);
+      gateGroup.add(guardSign);
+
+      const dutySoldier = buildClayChibiSoldier({ id: 'GUARD', starsCount: 1 });
+      dutySoldier.position.set(-3.0, 0, -1.1);
+      dutySoldier.rotation.y = 0.25;
+      gateGroup.add(dutySoldier);
+
+      // Cột cờ Tổ quốc
+      const flagPole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05, 0.08, 6.2, 14),
+        new THREE.MeshPhongMaterial({ color: 0xf1f5f9, shininess: 90 })
+      );
+      flagPole.position.set(4.1, 3.1, -1.1);
+      gateGroup.add(flagPole);
+
+      const poleFinial = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), goldMat);
+      poleFinial.position.set(4.1, 6.25, -1.1);
+      gateGroup.add(poleFinial);
+
+      const flagCanvas = document.createElement('canvas');
+      flagCanvas.width = 256;
+      flagCanvas.height = 170;
+      const fctx = flagCanvas.getContext('2d');
+      fctx.fillStyle = '#dc2626';
+      fctx.fillRect(0, 0, 256, 170);
+      drawStar(fctx, 128, 85, 5, 48, 19, '#facc15');
+      const flagTex = new THREE.CanvasTexture(flagCanvas);
+
+      const flagGeo = new THREE.PlaneGeometry(1.65, 1.1, 14, 6);
+      flagMesh = new THREE.Mesh(
+        flagGeo,
+        new THREE.MeshBasicMaterial({ map: flagTex, side: THREE.DoubleSide })
+      );
+      flagMesh.position.set(4.95, 5.55, -1.1);
+      gateGroup.add(flagMesh);
+
+      scene.add(gateGroup);
+
+      // Cây xanh & bồn hoa trang trí sân trong
+      [
+        [-5.3, -5.2], [-5.3, 4.8], [-5.3, 8.2],
+        [5.3, -5.2],  [5.3, 4.8],  [5.3, 8.2]
+      ].forEach(([tx, tz]) => {
+        const planter = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.38, 0.42, 14), new THREE.MeshLambertMaterial({ color: 0xb91c1c }));
+        planter.position.set(tx, 0.21, tz);
+        scene.add(planter);
+
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.11, 0.85, 10), new THREE.MeshLambertMaterial({ color: 0x78350f }));
+        trunk.position.set(tx, 0.72, tz);
+        scene.add(trunk);
+
+        const crown1 = new THREE.Mesh(new THREE.SphereGeometry(0.55, 14, 14), new THREE.MeshLambertMaterial({ color: 0x16a34a }));
+        crown1.position.set(tx, 1.32, tz);
+        scene.add(crown1);
+
+        const crown2 = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 12), new THREE.MeshLambertMaterial({ color: 0x22c55e }));
+        crown2.position.set(tx + 0.15, 1.65, tz - 0.1);
+        scene.add(crown2);
+      });
+    }
+
+    // =========================================================================
+    // 9. KHỞI TẠO SCENE 3D CHÍNH VỚI RESIZEOBSERVER & DỰ PHÒNG 2D AN TOÀN
+    // =========================================================================
+    let scene, camera, renderer, raycaster, mouse;
+    const chibiMeshes = {};
+    const clickableTargets = [];
+    const haloRings = {};
+    let coordLinesGroup = null;
+    let flagMesh = null;
+    let clock = new THREE.Clock();
+
+    function init3DScene() {
+      const container = document.getElementById('canvas-container');
+      if (typeof THREE === 'undefined') {
+        enable2DFallback('Thư viện đồ họa đang tải chậm, chuyển sang sơ đồ mặt bằng tương tác.');
+        return;
+      }
+
+      try {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xcfe8fc);
+        scene.fog = new THREE.FogExp2(0xcfe8fc, 0.009);
+
+        const initW = container.clientWidth || window.innerWidth || 1024;
+        const initH = container.clientHeight || window.innerHeight || 768;
+
+        camera = new THREE.PerspectiveCamera(44, initW / initH, 0.1, 160);
+        updateCameraTransform();
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'default' });
+        renderer.setSize(initW, initH);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        container.innerHTML = '';
+        container.appendChild(renderer.domElement);
+
+        // Ánh sáng ban ngày rực rỡ, bảo đảm 100% vật thể sáng rõ từ mọi góc nhìn
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.92);
+        scene.add(ambientLight);
+
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8fa876, 0.55);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfffbe6, 0.85);
+        dirLight.position.set(12, 22, 16);
+        scene.add(dirLight);
+
+        // Mặt nền sân doanh trại Ban CHQS Phường (24m x 23m)
+        const ground = new THREE.Mesh(
+          new THREE.BoxGeometry(24.0, 0.3, 23.0),
+          new THREE.MeshLambertMaterial({ map: createCourtyardTileTexture() })
+        );
+        ground.position.y = -0.15;
+        scene.add(ground);
+
+        // Dựng toàn bộ kiến trúc chữ U
+        buildEntranceGateAndCourtyard();
+        buildCentralConferenceHall();
+        buildRearLogisticsWing();
+        ROOMS_DATA.filter(r => r.isAssistantRoom).forEach(room => buildPrivateAssistantRoom(room));
+
+        coordLinesGroup = new THREE.Group();
+        scene.add(coordLinesGroup);
+
+        // Gắn bộ điều khiển Camera cầu tích hợp
+        bindBuiltInCameraControls(renderer.domElement);
+
+        // Raycaster chọn phòng & nhân vật
+        raycaster = new THREE.Raycaster();
+        mouse = new THREE.Vector2();
+        bindClickSelection(renderer.domElement);
+
+        // ResizeObserver chống lỗi khung hình 0x0
+        if (typeof ResizeObserver !== 'undefined') {
+          const ro = new ResizeObserver(entries => {
+            for (const entry of entries) {
+              const w = entry.contentRect.width || window.innerWidth;
+              const h = entry.contentRect.height || window.innerHeight;
+              if (w > 0 && h > 0 && camera && renderer) {
+                camera.aspect = w / h;
+                camera.updateProjectionMatrix();
+                renderer.setSize(w, h);
+              }
+            }
+          });
+          ro.observe(container);
+        }
+        window.addEventListener('resize', () => {
+          const w = container.clientWidth || window.innerWidth;
+          const h = container.clientHeight || window.innerHeight;
+          if (w > 0 && h > 0 && camera && renderer) {
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+          }
+        });
+
+        createFloatingLabels();
+        renderQuickDock();
+
+        // Render ngay khung hình đầu tiên trước khi chạy vòng lặp
+        renderer.render(scene, camera);
+        animate();
+      } catch (err) {
+        enable2DFallback('Trình duyệt hiện tại đang tắt WebGL 3D, đã bật Sơ đồ mặt bằng chữ U.');
+      }
+    }
+
+    function enable2DFallback(reason) {
+      document.getElementById('canvas-container').classList.add('hidden');
+      const fb = document.getElementById('fallback-2d');
+      fb.classList.remove('hidden');
+      const grid = document.getElementById('fallback-2d-grid');
+      grid.innerHTML = '';
+      ROOMS_DATA.forEach(room => {
+        const card = document.createElement('button');
+        card.onclick = () => selectRoom(room.id);
+        card.className = 'p-3.5 rounded-2xl border border-emerald-900/20 bg-emerald-50/70 hover:bg-emerald-100 text-left transition shadow-sm';
+        card.innerHTML = `
+          <div class="text-xs font-extrabold text-red-800">${room.signText} (${room.code})</div>
+          <div class="text-sm font-bold text-slate-900 mt-0.5">${room.fullName}</div>
+          <div class="text-[11px] text-slate-600 mt-1">${room.subtitle}</div>
+        `;
+        grid.appendChild(card);
+      });
+      renderQuickDock();
+      showToast(reason, 'warning');
+    }
+
+    function bindClickSelection(domElement) {
+      let startX = 0, startY = 0;
+      domElement.addEventListener('pointerdown', e => {
+        startX = e.clientX;
+        startY = e.clientY;
+      });
+      domElement.addEventListener('pointerup', e => {
+        if (Math.hypot(e.clientX - startX, e.clientY - startY) > 7) return;
+        const rect = domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+        const hits = raycaster.intersectObjects(clickableTargets, false);
+        if (hits.length > 0 && hits[0].object.userData.roomId) {
+          selectRoom(hits[0].object.userData.roomId);
+        }
+      });
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const elapsed = clock.getElapsedTime();
+
+      updateCameraTransform();
+
+      // Hiệu ứng lá cờ Tổ quốc bay nhẹ
+      if (flagMesh) {
+        const posAttr = flagMesh.geometry.attributes.position;
+        for (let i = 0; i < posAttr.count; i++) {
+          const x = posAttr.getX(i);
+          const wave = Math.sin(elapsed * 4.5 + x * 3.5) * 0.08 * ((x + 0.82) / 1.65);
+          posAttr.setZ(i, wave);
+        }
+        posAttr.needsUpdate = true;
+      }
+
+      // Diễn hoạt các chú Bộ đội Chibi 3D
+      ROOMS_DATA.filter(r => r.isAssistantRoom).forEach((room, idx) => {
+        const chibi = chibiMeshes[room.id];
+        const ring = haloRings[room.id];
+        if (!chibi) return;
+
+        const isSelected = drawerOpen && selectedRoomId === room.id;
+        const isCoordMember = coordinationBeamsActive && selectedCoordAgents.includes(room.id);
+        const phase = idx * 0.9;
+
+        chibi.userData.bodyGroup.position.y = 0.58 + Math.sin(elapsed * 2.5 + phase) * 0.014;
+        chibi.userData.headGroup.position.y = 1.22 + Math.sin(elapsed * 2.5 + phase - 0.3) * 0.018;
+        chibi.userData.headGroup.rotation.y = Math.sin(elapsed * 1.15 + phase) * 0.08;
+
+        const wantSalute = (isSelected || isCoordMember) ? 1 : 0;
+        chibi.userData.saluteProgress += (wantSalute - chibi.userData.saluteProgress) * 0.12;
+        const sp = chibi.userData.saluteProgress;
+
+        chibi.userData.rightArmPivot.rotation.z = sp * 2.15;
+        chibi.userData.rightArmPivot.rotation.x = sp * -0.45;
+        chibi.userData.leftArmPivot.rotation.x = (1 - sp) * Math.sin(elapsed * 8 + phase) * 0.08;
+
+        if (ring) {
+          if (isSelected) {
+            ring.material.color.setHex(0xfacc15);
+            ring.material.opacity = 0.78 + Math.sin(elapsed * 5) * 0.2;
+            ring.scale.setScalar(1.06);
+          } else if (isCoordMember) {
+            ring.material.color.setHex(0xef4444);
+            ring.material.opacity = 0.7 + Math.sin(elapsed * 6) * 0.25;
+            ring.scale.setScalar(1.04);
+          } else {
+            ring.material.color.set(room.colorHex);
+            ring.material.opacity = 0.32;
+            ring.scale.setScalar(1);
+          }
+        }
+      });
+
+      if (haloRings['HALL']) {
+        haloRings['HALL'].material.opacity = ((drawerOpen && selectedRoomId === 'HALL') || coordinationBeamsActive)
+          ? 0.78 + Math.sin(elapsed * 5) * 0.2
+          : 0.35;
+      }
+      if (coordLinesGroup && coordLinesGroup.children.length > 0) {
+        coordLinesGroup.children.forEach((line, i) => {
+          line.material.opacity = 0.6 + Math.sin(elapsed * 6 + i) * 0.35;
+        });
+      }
+
+      renderer.render(scene, camera);
+      updateLabelsScreenPositions();
+    }
+
+    // =========================================================================
+    // 10. NHÃN NỔI 2D & THANH CHỌN NHANH DƯỚI ĐÁY
+    // =========================================================================
+    function createFloatingLabels() {
+      const layer = document.getElementById('labels-layer');
+      layer.innerHTML = '';
+      ROOMS_DATA.forEach(room => {
+        const el = document.createElement('div');
+        el.id = `label-${room.id}`;
+        el.className = 'room-label-3d';
+        el.onclick = () => selectRoom(room.id);
+        layer.appendChild(el);
+      });
+      updateAllLabelsUI();
+    }
+
+    function updateAllLabelsUI() {
+      ROOMS_DATA.forEach(room => {
+        const el = document.getElementById(`label-${room.id}`);
+        if (!el) return;
+
+        const skillCount = (skillsStore[room.id] || []).filter(s => s.active).length;
+        const isSelected = drawerOpen && selectedRoomId === room.id;
+        const isCoordMember = coordinationBeamsActive && selectedCoordAgents.includes(room.id);
+        const isSpecial = room.id === 'CTV' || room.id === 'HALL';
+
+        el.classList.toggle('active', isSelected);
+
+        const bgClass = isSpecial
+          ? 'bg-gradient-to-r from-red-800 to-red-900 text-amber-200 border-amber-400'
+          : isSelected
+            ? 'bg-[#143622] text-white border-amber-400 ring-2 ring-amber-400/60'
+            : isCoordMember
+              ? 'bg-amber-900/95 text-amber-100 border-amber-300'
+              : 'bg-white/95 text-slate-800 border-emerald-900/25';
+
+        el.innerHTML = `
+          <div class="px-2.5 py-1 rounded-xl border shadow-lg backdrop-blur-md flex items-center gap-1.5 whitespace-nowrap ${bgClass}">
+            <span class="text-[10px] font-black px-1.5 py-0.5 rounded-md ${isSpecial ? 'bg-amber-400 text-red-950' : 'bg-emerald-700 text-white'}">${room.code}</span>
+            <span class="text-[11px] font-bold">${room.shortName}</span>
+            <span class="text-[10px] font-bold px-1.5 rounded-full ${isSelected || isSpecial ? 'bg-amber-400/25 text-amber-200' : 'bg-emerald-100 text-emerald-800'}">⚡${skillCount}</span>
+          </div>
+          <div class="w-2 h-2 rotate-45 mx-auto -mt-1 border-r border-b ${isSpecial ? 'bg-red-900 border-amber-400' : isSelected ? 'bg-[#143622] border-amber-400' : 'bg-white border-emerald-900/25'}"></div>
+        `;
+      });
+    }
+
+    function updateLabelsScreenPositions() {
+      if (!camera) return;
+      const tempVec = new THREE.Vector3();
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      ROOMS_DATA.forEach(room => {
+        const el = document.getElementById(`label-${room.id}`);
+        if (!el) return;
+        const yPos = room.id === 'HALL' ? 3.55 : 2.85;
+        tempVec.set(room.pos.x, yPos, room.pos.z);
+        tempVec.project(camera);
+
+        if (tempVec.z > 1) {
+          el.style.display = 'none';
+          return;
+        }
+        el.style.display = 'block';
+        el.style.left = `${(tempVec.x * 0.5 + 0.5) * w}px`;
+        el.style.top = `${(-(tempVec.y * 0.5) + 0.5) * h}px`;
+      });
+    }
+
+    function renderQuickDock() {
+      const dock = document.getElementById('quick-dock');
+      dock.innerHTML = '';
+
+      ROOMS_DATA.forEach(room => {
+        const skillCount = (skillsStore[room.id] || []).filter(s => s.active).length;
+        const isSelected = drawerOpen && selectedRoomId === room.id;
+        const btn = document.createElement('button');
+        btn.onclick = () => selectRoom(room.id);
+        btn.className = `px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shrink-0 border ${
+          isSelected
+            ? 'bg-amber-400 text-[#143622] border-amber-200 shadow-md scale-105'
+            : (room.id === 'CTV' || room.id === 'HALL')
+              ? 'bg-red-800/90 text-amber-200 border-amber-400/40 hover:bg-red-700'
+              : 'bg-white/10 text-emerald-50 border-white/10 hover:bg-white/20'
+        }`;
+        btn.innerHTML = `
+          <span>${room.icon}</span>
+          <span>${room.code}</span>
+          <span class="hidden md:inline font-semibold opacity-90">${room.shortName}</span>
+          <span class="text-[10px] px-1 rounded bg-black/25">${skillCount}</span>
+        `;
+        dock.appendChild(btn);
+      });
+    }
+
+    // =========================================================================
+    // 11. ĐIỀU KHIỂN BẢNG TÁC NGHIỆP AI AGENT 4 TAB
+    // =========================================================================
+    function toggleWorkspaceDrawer() {
+      if (drawerOpen) {
+        closeDrawer();
+      } else {
+        selectRoom(selectedRoomId || 'CTV');
+      }
+    }
+
+    function selectRoom(roomId) {
+      const room = ROOMS_DATA.find(r => r.id === roomId);
+      if (!room) return;
+      selectedRoomId = roomId;
+      drawerOpen = true;
+
+      if (room.camFocus) {
+        camState.targetRadius = room.camFocus.radius;
+        camState.targetTheta = room.camFocus.theta;
+        camState.targetPhi = room.camFocus.phi;
+        camState.desiredTarget.set(room.camFocus.target.x, room.camFocus.target.y, room.camFocus.target.z);
+      }
+
+      document.getElementById('drawer-icon').textContent = room.icon;
+      document.getElementById('drawer-code').textContent = room.code;
+      document.getElementById('drawer-rank').textContent = room.rank;
+      document.getElementById('drawer-title').textContent = room.fullName;
+      document.getElementById('drawer-subtitle').textContent = room.subtitle;
+      document.getElementById('learn-agent-name').textContent = `${room.code} (${room.shortName})`;
+
+      const docSelect = document.getElementById('doc-type-select');
+      if (docSelect && room.defaultDocType) {
+        docSelect.value = room.defaultDocType;
+      }
+
+      const activeSkills = (skillsStore[room.id] || []).filter(s => s.active);
+      document.getElementById('drawer-skill-badge').textContent = `⚡ ${activeSkills.length} Skill`;
+      document.getElementById('active-skills-indicator').textContent = `Đang nạp ${activeSkills.length} Skill + NĐ 30 + 7 Dám/6 Rõ`;
+
+      const promptsBox = document.getElementById('quick-prompts');
+      promptsBox.innerHTML = '';
+      room.quickPrompts.forEach(pText => {
+        const btn = document.createElement('button');
+        btn.onclick = () => { document.getElementById('task-input').value = pText; };
+        btn.className = 'text-left text-[11px] px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-950 border border-emerald-200/80 transition leading-snug';
+        btn.textContent = `• ${pText}`;
+        promptsBox.appendChild(btn);
+      });
+
+      renderCoordCheckboxes();
+      renderSkillsList();
+      renderCabinetTab();
+      switchTab('advise');
+
+      if (room.id === 'HALL') {
+        toggleCoordPanel(true);
+        toggleCoordinationBeams(true);
+      }
+
+      const drawer = document.getElementById('workspace-drawer');
+      drawer.classList.remove('translate-x-[115%]', 'opacity-0', 'pointer-events-none');
+      drawer.classList.add('translate-x-0', 'opacity-100', 'pointer-events-auto');
+
+      updateAllLabelsUI();
+      renderQuickDock();
+    }
+
+    function closeDrawer() {
+      const drawer = document.getElementById('workspace-drawer');
+      drawer.classList.add('translate-x-[115%]', 'opacity-0', 'pointer-events-none');
+      drawer.classList.remove('translate-x-0', 'opacity-100', 'pointer-events-auto');
+      drawerOpen = false;
+      updateAllLabelsUI();
+      renderQuickDock();
+    }
+
+    function switchTab(tabName) {
+      currentTab = tabName;
+      ['advise', 'learn', 'skills', 'cabinet'].forEach(t => {
+        const panel = document.getElementById(`tab-${t}`);
+        const btn = document.getElementById(`tab-btn-${t}`);
+        if (t === tabName) {
+          panel.classList.remove('hidden');
+          btn.className = 'tab-btn py-1.5 px-1 rounded-xl text-[11px] sm:text-xs font-bold bg-amber-400 text-[#143622] shadow transition';
+        } else {
+          panel.classList.add('hidden');
+          btn.className = 'tab-btn py-1.5 px-1 rounded-xl text-[11px] sm:text-xs font-semibold text-emerald-100 hover:bg-white/10 transition';
+        }
+      });
+    }
+
+    // =========================================================================
+    // 12. PHỐI HỢP LIÊN NGÀNH & TIA KẾT NỐI 3D HỘI TỤ VỀ PHÒNG HỌP ĐẠI SẢNH
+    // =========================================================================
+    function triggerInterdepartmentalMeeting() {
+      const panel = document.getElementById('coord-panel');
+      const willOpen = panel.classList.contains('hidden');
+      toggleCoordPanel(willOpen);
+      toggleCoordinationBeams(willOpen);
+      if (willOpen) {
+        setCameraPreset('hall');
+        showToast('Đã kích hoạt Phối hợp Liên ngành tại Phòng họp Đại sảnh!', 'info');
+      }
+    }
+
+    function toggleCoordPanel(show) {
+      const panel = document.getElementById('coord-panel');
+      if (!panel) return;
+      if (show) panel.classList.remove('hidden');
+      else panel.classList.add('hidden');
+    }
+
+    function renderCoordCheckboxes() {
+      const box = document.getElementById('coord-checkboxes');
+      if (!box) return;
+      box.innerHTML = '';
+      ROOMS_DATA.filter(r => r.isAssistantRoom && r.id !== 'CTV').forEach(room => {
+        const active = selectedCoordAgents.includes(room.id);
+        const chip = document.createElement('button');
+        chip.onclick = () => {
+          if (selectedCoordAgents.includes(room.id)) {
+            selectedCoordAgents = selectedCoordAgents.filter(id => id !== room.id);
+          } else {
+            selectedCoordAgents.push(room.id);
+          }
+          renderCoordCheckboxes();
+          if (coordinationBeamsActive) draw3DCoordinationBeams();
+          updateAllLabelsUI();
+        };
+        chip.className = `px-2 py-1 rounded-lg text-[11px] font-bold border transition ${
+          active ? 'bg-red-700 text-amber-200 border-red-800' : 'bg-white text-slate-600 border-slate-300'
+        }`;
+        chip.textContent = `${active ? '✓ ' : ''}${room.code} ${room.shortName}`;
+        box.appendChild(chip);
+      });
+    }
+
+    function toggleCoordinationBeams(forceState) {
+      coordinationBeamsActive = typeof forceState === 'boolean' ? forceState : !coordinationBeamsActive;
+      if (coordinationBeamsActive) {
+        draw3DCoordinationBeams();
+      } else {
+        clear3DCoordinationBeams();
+      }
+      updateAllLabelsUI();
+    }
+
+    function draw3DCoordinationBeams() {
+      clear3DCoordinationBeams();
+      if (!coordLinesGroup) return;
+
+      const hallCenter = new THREE.Vector3(0, 1.35, 0.2);
+      const participants = ['CTV', ...selectedCoordAgents];
+
+      participants.forEach(pid => {
+        const r = ROOMS_DATA.find(item => item.id === pid);
+        if (!r) return;
+        const startPt = new THREE.Vector3(r.pos.x, 1.45, r.pos.z);
+        const midPt = new THREE.Vector3((startPt.x + hallCenter.x) / 2, 3.1, (startPt.z + hallCenter.z) / 2);
+
+        const curve = new THREE.QuadraticBezierCurve3(startPt, midPt, hallCenter);
+        const geo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(32));
+        const mat = new THREE.LineBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.9 });
+        coordLinesGroup.add(new THREE.Line(geo, mat));
+      });
+    }
+
+    function clear3DCoordinationBeams() {
+      if (!coordLinesGroup) return;
+      while (coordLinesGroup.children.length > 0) {
+        coordLinesGroup.remove(coordLinesGroup.children[0]);
+      }
+    }
+
+    // =========================================================================
+    // 13. KẾT NỐI GEMINI API & DỰ PHÒNG MẪU CHUẨN NỘI BỘ KHI NGOẠI TUYẾN
+    // =========================================================================
+    function getEffectiveApiKey() {
+      try {
+        return localStorage.getItem(API_KEY_STORAGE) || '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function toggleApiSettings() {
+      const modal = document.getElementById('api-modal');
+      if (modal.classList.contains('hidden')) {
+        document.getElementById('custom-api-key').value = getEffectiveApiKey();
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      } else {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+    }
+
+    function saveCustomApiKey() {
+      const val = document.getElementById('custom-api-key').value.trim();
+      try { localStorage.setItem(API_KEY_STORAGE, val); } catch (e) {}
+      toggleApiSettings();
+      showToast('Đã lưu cấu hình Gemini API Key!', 'success');
+    }
+
+    async function callGeminiWithRetry(payload, maxRetries = 2) {
+      const apiKey = getEffectiveApiKey();
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+      let delay = 900;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return await response.json();
+        } catch (err) {
+          if (attempt === maxRetries) throw err;
+          await new Promise(res => setTimeout(res, delay));
+          delay *= 2;
+        }
+      }
+    }
+
+    function buildOfflineMilitaryFallback(room, docType, taskText) {
+      const today = new Date();
+      const dateStr = `ngày ${String(today.getDate()).padStart(2, '0')} tháng ${String(today.getMonth() + 1).padStart(2, '0')} năm ${today.getFullYear()}`;
+      const activeRules = (skillsStore[room.id] || [])
+        .filter(s => s.active)
+        .flatMap(s => s.rules)
+        .map(r => `   + ${r}`)
+        .join('\n');
+
+      const headerBlock = docType.includes('Nghị quyết')
+        ? `ĐẢNG BỘ PHƯỜNG NAM GIA NGHĨA              ĐẢNG CỘNG SẢN VIỆT NAM\n    CHI BỘ QUÂN SỰ                    Nam Gia Nghĩa, ${dateStr}\n   Số: ...-NQ/CB`
+        : `BAN CHQS PHƯỜNG NAM GIA NGHĨA          CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\n    ${room.signText.toUpperCase()}                      Độc lập - Tự do - Hạnh phúc\n   Số: .../KH-BCH                         Nam Gia Nghĩa, ${dateStr}`;
+
+      return `${headerBlock}
+
+${docType.toUpperCase()}
+Về việc: ${taskText}
+
+I. MỤC ĐÍCH, YÊU CẦU
+1. Mục đích: Quán triệt và triển khai thực hiện nghiêm túc chỉ đạo của Chính trị viên Ban CHQS phường về nội dung "${taskText}", bảo đảm thống nhất, đồng bộ, chất lượng và hiệu quả cao.
+2. Yêu cầu:
+- Phát huy cao độ tinh thần "7 dám" của đội ngũ cán bộ, đảng viên và chiến sĩ dân quân thường trực.
+- Phân công tổ chức thực hiện chặt chẽ theo nguyên tắc "6 rõ" (Rõ người, rõ việc, rõ trách nhiệm, rõ thời gian, rõ sản phẩm, rõ thẩm quyền).
+
+II. NỘI DUNG, CHỈ TIÊU VÀ BIỆN PHÁP THỰC HIỆN
+1. Bám sát chức năng, nhiệm vụ chuyên ngành của ${room.fullName} để rà soát hồ sơ, văn bản pháp quy liên quan (Nghị định 30/2020/NĐ-CP và các thông tư, hướng dẫn của Tổng cục Chính trị).
+2. Áp dụng các quy tắc chuẩn hóa (Skills) đã được Chính trị viên phê duyệt:
+${activeRules || '   + Tuân thủ chặt chẽ thể thức văn bản quân sự và văn bản Đảng trong Quân đội.'}
+
+III. TỔ CHỨC THỰC HIỆN (PHÂN CÔNG THEO 6 RÕ)
+- Người chủ trì: ${room.fullName} chịu trách nhiệm trực tiếp tham mưu soạn thảo, thẩm định nội dung.
+- Thời gian hoàn thành: Báo cáo Chính trị viên phê duyệt trước 16h30 hằng ngày/tuần theo tiến độ.
+- Sản phẩm đầu ra: Hệ thống văn bản, kế hoạch, báo cáo hoàn chỉnh đúng thể thức, sẵn sàng ban hành.
+
+                                                    NGƯỜI THAM MƯU
+                                              ${room.fullName}`;
+    }
+
+    async function runAssistantTask() {
+      const room = ROOMS_DATA.find(r => r.id === selectedRoomId);
+      if (!room) return;
+
+      const docType = document.getElementById('doc-type-select').value;
+      const userTask = document.getElementById('task-input').value.trim();
+      if (!userTask) {
+        showToast('Vui lòng nhập yêu cầu hoặc chọn một mẫu lệnh tham mưu!', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('btn-generate');
+      const btnText = document.getElementById('btn-generate-text');
+      btn.disabled = true;
+      btnText.textContent = 'Trợ lý đang nghiên cứu tham mưu...';
+
+      const activeSkills = (skillsStore[room.id] || []).filter(s => s.active);
+      const skillsContext = activeSkills.map((sk, i) =>
+        `Skill ${i + 1} [${sk.name}]:\n` + sk.rules.map(r => `  - ${r}`).join('\n')
+      ).join('\n\n');
+
+      const systemInstruction = `Bạn là ${room.fullName} (${room.code}) thuộc Văn phòng 3D Ban CHQS phường Nam Gia Nghĩa, tỉnh Lâm Đồng. Cấp trên trực tiếp của bạn là Đại úy Đào Hữu Thiện - Chính trị viên Ban CHQS phường.
+
+NGUYÊN TẮC BẮT BUỘC:
+1. Đi thẳng vào nội dung dự thảo loại văn bản "${docType}" hoàn chỉnh, không mở đầu chào hỏi rườm rà.
+2. Tuân thủ nghiêm thể thức văn bản theo Nghị định 30/2020/NĐ-CP và quy định văn bản Đảng trong Quân đội nhân dân Việt Nam.
+3. Quán triệt tinh thần "7 dám" và phân công tổ chức thực hiện theo nguyên tắc "6 rõ" (Rõ người, rõ việc, rõ trách nhiệm, rõ thời gian, rõ sản phẩm, rõ thẩm quyền).
+4. Áp dụng 100% các Kỹ năng (Skills) đã học dưới đây:
+${skillsContext}`;
+
+      try {
+        const result = await callGeminiWithRetry({
+          contents: [{ parts: [{ text: `Loại văn bản: ${docType}\nYêu cầu chi tiết: ${userTask}` }] }],
+          systemInstruction: { parts: [{ text: systemInstruction }] }
+        });
+        const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error('Empty response');
+
+        document.getElementById('output-card').classList.remove('hidden');
+        document.getElementById('ai-output-content').textContent = text.trim();
+        showToast(`${room.code} đã hoàn thành dự thảo ${docType}!`, 'success');
+      } catch (err) {
+        const fallbackText = buildOfflineMilitaryFallback(room, docType, userTask);
+        document.getElementById('output-card').classList.remove('hidden');
+        document.getElementById('ai-output-content').textContent = fallbackText;
+        showToast('Đã xuất dự thảo theo khung mẫu chuẩn quân sự (Nhập API Key ở ⚙️ để dùng AI trực tuyến).', 'info');
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Giao Trợ lý Tham mưu';
+      }
+    }
+
+    async function runCoordinationMission() {
+      const mission = document.getElementById('task-input').value.trim() || 'Tổ chức Diễn tập chiến đấu phường trong khu vực phòng thủ và công tác tuyển quân năm 2027';
+      toggleCoordinationBeams(true);
+      setCameraPreset('hall');
+
+      const btn = document.getElementById('btn-run-coord');
+      btn.disabled = true;
+      btn.textContent = 'Đang họp giao ban hiệp đồng các phòng...';
+
+      const coopList = selectedCoordAgents.map(cid => {
+        const r = ROOMS_DATA.find(item => item.id === cid);
+        const rSkills = (skillsStore[cid] || []).filter(s => s.active).flatMap(s => s.rules).join('; ');
+        return `- ${r.code} (${r.fullName}): Chuyên trách ${r.subtitle}. Quy tắc chuẩn: ${rSkills}`;
+      }).join('\n');
+
+      const prompt = `Với vai trò là Trợ lý Kế hoạch Tổng hợp (TL-01) điều phối tại Phòng họp Đại sảnh Ban CHQS phường Nam Gia Nghĩa, hãy xây dựng KẾ HOẠCH HIỆP ĐỒNG CÔNG TÁC ĐẢNG, CÔNG TÁC CHÍNH TRỊ cho nhiệm vụ: "${mission}".
+
+Bắt buộc phân công rõ nhiệm vụ cho từng phòng trợ lý tham gia dưới đây theo từng mục "6 RÕ" (Rõ người/phòng chủ trì, Rõ việc, Rõ trách nhiệm, Rõ thời gian, Rõ sản phẩm văn bản phải nộp, Rõ thẩm quyền phê duyệt):
+${coopList}`;
+
+      try {
+        const result = await callGeminiWithRetry({
+          contents: [{ parts: [{ text: prompt }] }]
+        });
+        const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error('Empty response');
+
+        document.getElementById('output-card').classList.remove('hidden');
+        document.getElementById('ai-output-content').textContent = text.trim();
+        showToast('Đã hoàn thành Kế hoạch Hiệp đồng Liên ngành tại Đại sảnh!', 'success');
+      } catch (err) {
+        const rows = selectedCoordAgents.map((cid, idx) => {
+          const r = ROOMS_DATA.find(item => item.id === cid);
+          return `${idx + 1}. ${r.signText} (${r.code}):\n   - Việc cần làm: Tham mưu hệ thống văn bản, kế hoạch chuyên ngành ${r.shortName} phục vụ nhiệm vụ "${mission}".\n   - Sản phẩm: Dự thảo văn bản chuẩn NĐ 30/2020/NĐ-CP gửi TL-01 tổng hợp trước 16h00.\n   - Trách nhiệm & Thẩm quyền: ${r.fullName} chịu trách nhiệm nội dung; trình Đại úy Đào Hữu Thiện - Chính trị viên phê duyệt.`;
+        }).join('\n\n');
+
+        const offlineCoord = `BAN CHQS PHƯỜNG NAM GIA NGHĨA\nPHÒNG HỌP GIAO BAN ĐẠI SẢNH\n\nKẾ HOẠCH HIỆP ĐỒNG LIÊN NGÀNH (NGUYÊN TẮC 6 RÕ)\nNhiệm vụ: ${mission}\n\nI. CHỦ TRÌ ĐIỀU HÀNH CHUNG\n- Đại úy Đào Hữu Thiện - Chính trị viên Ban CHQS phường chỉ đạo toàn diện.\n- Trợ lý Kế hoạch Tổng hợp (TL-01) làm đầu mối đôn đốc, kiểm tra chéo số liệu và hợp nhất hồ sơ.\n\nII. PHÂN CÔNG HIỆP ĐỒNG CÁC PHÒNG CHUYÊN NGÀNH\n${rows}`;
+
+        document.getElementById('output-card').classList.remove('hidden');
+        document.getElementById('ai-output-content').textContent = offlineCoord;
+        showToast('Đã xuất Bảng Hiệp đồng 6 Rõ cho các phòng tham gia!', 'success');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '⚡ Xuất Kế hoạch Hiệp đồng Liên ngành (6 Rõ)';
+      }
+    }
+
+    function clearTaskOutput() {
+      document.getElementById('task-input').value = '';
+      document.getElementById('output-card').classList.add('hidden');
+      document.getElementById('ai-output-content').textContent = '';
+    }
+
+    function copyDraftText(elementId) {
+      const content = document.getElementById(elementId)?.textContent;
+      if (!content) return;
+      const ta = document.createElement('textarea');
+      ta.value = content;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showToast('Đã sao chép toàn bộ văn bản vào khay nhớ tạm!', 'success');
+      } catch (e) {
+        showToast('Không thể sao chép tự động, vui lòng bôi đen văn bản.', 'warning');
+      }
+      document.body.removeChild(ta);
+    }
+
+    function downloadDocFile(elementId, prefix) {
+      const content = document.getElementById(elementId)?.textContent;
+      if (!content) return;
+
+      const htmlBody = content
+        .split('\n')
+        .map(line => `<p style="margin: 4pt 0; text-align: justify;">${line.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`)
+        .join('');
+
+      const docHtml = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+        <head><meta charset='utf-8'><title>Văn bản Ban CHQS Phường</title></head>
+        <body style="font-family: 'Times New Roman', serif; font-size: 14pt; line-height: 1.4;">
+          ${htmlBody}
+        </body>
+        </html>
+      `;
+
+      const blob = new Blob(['\ufeff', docHtml], { type: 'application/msword' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${prefix || 'VanBan'}_BanCHQS_NamGiaNghia.doc`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Đã tải về tệp Word (.doc) chuẩn phông Times New Roman!', 'success');
+    }
+
+    function sendDraftToLearn() {
+      const draft = document.getElementById('ai-output-content').textContent;
+      document.getElementById('v1-input').value = draft;
+      document.getElementById('v2-input').value = draft;
+      switchTab('learn');
+      showToast('Đã chuyển Bản nháp V1 sang Tab Học Skill. Hãy sửa thành bản chuẩn V2 rồi bấm Đóng gói!', 'info');
+    }
+
+    // =========================================================================
+    // 14. CƠ CHẾ TỰ HỌC DIFF-LEARNING & QUẢN LÝ KHO SKILL VĨNH VIỄN
+    // =========================================================================
+    function loadTextFile(event, targetTextareaId) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        document.getElementById(targetTextareaId).value = e.target.result || '';
+        showToast(`Đã nạp tệp "${file.name}" thành công!`, 'success');
+      };
+      reader.readAsText(file, 'UTF-8');
+      event.target.value = '';
+    }
+
+    function fillSampleDiff() {
+      document.getElementById('v1-input').value =
+`KẾ HOẠCH
+Tổ chức tuyên truyền tuyển quân năm 2027
+1. Mục đích: Tuyên truyền cho thanh niên hiểu Luật Nghĩa vụ quân sự để đi bộ đội đầy đủ.
+2. Nội dung: Phát loa truyền thanh và đến nhà vận động thanh niên.
+3. Tổ chức thực hiện: Giao cho các đồng chí dân quân và đoàn thể cùng làm.`;
+
+      document.getElementById('v2-input').value =
+`BAN CHQS PHƯỜNG NAM GIA NGHĨA
+Số: .../KH-BCH
+
+KẾ HOẠCH
+Công tác tuyên truyền, vận động tuyển chọn và gọi công dân nhập ngũ năm 2027
+
+I. MỤC ĐÍCH, YÊU CẦU
+1. Mục đích: Tạo chuyển biến mạnh mẽ về nhận thức, trách nhiệm của cả hệ thống chính trị, nhân dân và thanh niên trong độ tuổi sẵn sàng nhập ngũ đối với nhiệm vụ bảo vệ Tổ quốc; hoàn thành 100% chỉ tiêu giao quân bảo đảm chất lượng cao.
+2. Yêu cầu: Tổ chức tuyên truyền sâu rộng, đúng trọng tâm, trọng điểm; phát huy tinh thần "7 dám" của đội ngũ cán bộ, phân công thực hiện theo nguyên tắc "6 rõ".
+
+II. NỘI DUNG, HÌNH THỨC TUYÊN TRUYỀN
+1. Tập trung tuyên truyền Luật Nghĩa vụ quân sự sửa đổi, chế độ chính sách hậu phương quân đội và truyền thống quê hương Lâm Đồng anh hùng.
+2. Kết hợp tuyên truyền trên hệ thống truyền thanh phường với gặp gỡ, nắm chắc tâm tư từng gia đình thanh niên đủ điều kiện khám tuyển.
+
+III. TỔ CHỨC THỰC HIỆN (PHÂN CÔNG THEO 6 RÕ)
+- Trợ lý Tuyên huấn chủ trì biên soạn đề cương tuyên truyền, hoàn thành trước ngày 15/10.
+- Khu đội trưởng các tổ dân phố phối hợp Chi đoàn nắm chắc biến động nhân khẩu thanh niên, báo cáo hằng tuần.`;
+      showToast('Đã điền ví dụ mẫu V1 và Bản chuẩn V2 của Chính trị viên!', 'info');
+    }
+
+    async function extractAndSaveSkill() {
+      const room = ROOMS_DATA.find(r => r.id === selectedRoomId);
+      if (!room) return;
+
+      const v1 = document.getElementById('v1-input').value.trim();
+      const v2 = document.getElementById('v2-input').value.trim();
+      if (!v2) {
+        showToast('Vui lòng dán hoặc tải lên Bản chuẩn Chính trị viên đã sửa (V2)!', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('btn-extract-skill');
+      const btnText = document.getElementById('btn-extract-text');
+      btn.disabled = true;
+      btnText.textContent = 'Đang đối chiếu & đúc kết Skill chuẩn...';
+
+      const prompt = v1
+        ? `Đối chiếu chi tiết giữa Bản nháp AI (V1) và Bản chuẩn Chính trị viên đã sửa (V2) cho phòng "${room.fullName}":\n\n--- BẢN NHÁP V1 ---\n${v1}\n\n--- BẢN CHUẨN V2 ---\n${v2}\n\nRút ra 3-5 quy tắc cốt lõi về thuật ngữ quân sự - chính trị, thể thức bố cục và phong cách chỉ huy để đóng gói thành Skill cố định.`
+        : `Phân tích Văn bản chuẩn mẫu (V2) của Chính trị viên Ban CHQS phường Nam Gia Nghĩa cho phòng "${room.fullName}":\n\n--- VĂN BẢN CHUẨN MẪU ---\n${v2}\n\nRút ra 3-5 quy tắc cốt lõi về thể thức, bố cục, thuật ngữ quân sự và cách phân công 6 rõ để đóng gói thành Skill cố định.`;
+
+      try {
+        const result = await callGeminiWithRetry({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: 'OBJECT',
+              properties: {
+                skillName: { type: 'STRING' },
+                category: { type: 'STRING' },
+                rules: { type: 'ARRAY', items: { type: 'STRING' } }
+              },
+              required: ['skillName', 'category', 'rules']
+            }
+          }
+        });
+        const parsed = JSON.parse(result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
+        saveNewSkillObject(room, parsed);
+      } catch (err) {
+        const lines = v2.split('\n').map(l => l.trim()).filter(Boolean);
+        const headingLine = lines.find(l => l.length > 10 && l.length < 90) || `Chuẩn hóa văn bản ${room.shortName}`;
+        saveNewSkillObject(room, {
+          skillName: `Quy chuẩn: ${headingLine.slice(0, 48)}`,
+          category: 'Học từ Bản chuẩn V2',
+          rules: [
+            'Áp dụng đúng cấu trúc các phần I, II, III và thể thức văn bản chuẩn Chính trị viên đã duyệt.',
+            'Sử dụng thuật ngữ quân sự chính xác (quán triệt, hiệp đồng chặt chẽ, tuyển chọn và gọi công dân nhập ngũ...).',
+            'Phân công nhiệm vụ cụ thể theo nguyên tắc "6 rõ" và tinh thần "7 dám".'
+          ]
+        });
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Phân tích Đối chiếu & Đóng gói thành Skill';
+      }
+    }
+
+    function saveNewSkillObject(room, parsed) {
+      const newSkill = {
+        id: `sk-${room.id}-${Date.now()}`,
+        name: parsed.skillName || 'Kỹ năng chuẩn hóa văn bản mới',
+        category: parsed.category || 'Quy chuẩn Chính trị viên',
+        active: true,
+        learnedAt: new Date().toLocaleDateString('vi-VN'),
+        rules: Array.isArray(parsed.rules) && parsed.rules.length > 0
+          ? parsed.rules
+          : ['Áp dụng đúng bố cục và văn phong từ văn bản chuẩn Chính trị viên đã duyệt.']
+      };
+
+      if (!skillsStore[room.id]) skillsStore[room.id] = [];
+      skillsStore[room.id].unshift(newSkill);
+      saveSkillsStore();
+      selectRoom(room.id);
+      switchTab('skills');
+      showToast(`🎉 ${room.code} đã đóng gói thành công Skill: "${newSkill.name}"!`, 'success');
+    }
+
+    function renderSkillsList() {
+      const listEl = document.getElementById('skills-list');
+      if (!listEl) return;
+      listEl.innerHTML = '';
+      const roomSkills = skillsStore[selectedRoomId] || [];
+
+      if (roomSkills.length === 0) {
+        listEl.innerHTML = `<div class="text-center py-6 text-xs text-slate-500">Chưa có Skill nào được lưu cho phòng này.</div>`;
+        return;
+      }
+
+      roomSkills.forEach((sk, idx) => {
+        const card = document.createElement('div');
+        card.className = `p-3 rounded-2xl border transition ${
+          sk.active ? 'bg-white border-emerald-900/20 shadow-sm' : 'bg-slate-50 border-slate-200 opacity-65'
+        }`;
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900">${sk.category}</span>
+                ${sk.learnedAt ? `<span class="text-[10px] text-slate-400">Học ngày ${sk.learnedAt}</span>` : ''}
+              </div>
+              <h4 class="text-xs font-extrabold text-slate-800 mt-1">${sk.name}</h4>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button onclick="toggleSkillActive(${idx})" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition ${
+                sk.active ? 'bg-emerald-700 text-white border-emerald-800' : 'bg-slate-200 text-slate-600 border-slate-300'
+              }">
+                ${sk.active ? 'Đang bật' : 'Đã tắt'}
+              </button>
+              <button id="del-sk-${idx}" onclick="confirmDeleteSkill(${idx})" class="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition" title="Xóa Skill">
+                🗑️
+              </button>
+            </div>
+          </div>
+          <ul class="mt-2 space-y-1 text-[11px] text-slate-600 list-disc pl-4">
+            ${sk.rules.map(r => `<li>${r}</li>`).join('')}
+          </ul>
+        `;
+        listEl.appendChild(card);
+      });
+    }
+
+    function toggleSkillActive(index) {
+      const list = skillsStore[selectedRoomId];
+      if (!list || !list[index]) return;
+      list[index].active = !list[index].active;
+      saveSkillsStore();
+      selectRoom(selectedRoomId);
+      switchTab('skills');
+    }
+
+    let pendingDeleteIdx = null;
+    function confirmDeleteSkill(index) {
+      const btn = document.getElementById(`del-sk-${index}`);
+      if (pendingDeleteIdx === index) {
+        skillsStore[selectedRoomId].splice(index, 1);
+        pendingDeleteIdx = null;
+        saveSkillsStore();
+        selectRoom(selectedRoomId);
+        switchTab('skills');
+        showToast('Đã xóa Skill khỏi bộ nhớ phòng.', 'info');
+      } else {
+        pendingDeleteIdx = index;
+        if (btn) {
+          btn.textContent = 'Xóa?';
+          btn.className = 'px-2 py-0.5 rounded-lg bg-red-600 text-white text-[10px] font-bold';
+        }
+        setTimeout(() => {
+          if (pendingDeleteIdx === index) {
+            pendingDeleteIdx = null;
+            renderSkillsList();
+          }
+        }, 3000);
+      }
+    }
+
+    function exportAllSkillsJSON() {
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        unit: 'Ban CHQS Phường Nam Gia Nghĩa - Văn phòng 3D Chữ U',
+        skills: skillsStore,
+        links: linksStore
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `BoNho_PhongChinhTri_3D_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Đã xuất toàn bộ bộ nhớ Skills & Liên kết ra tệp JSON!', 'success');
+    }
+
+    function importAllSkillsJSON(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (data.skills) {
+            skillsStore = data.skills;
+            saveSkillsStore();
+          }
+          if (data.links) {
+            linksStore = data.links;
+            saveLinksStore();
+          }
+          if (selectedRoomId) {
+            selectRoom(selectedRoomId);
+            switchTab('skills');
+          }
+          showToast('Đã khôi phục toàn bộ bộ nhớ Skills thành công!', 'success');
+        } catch (err) {
+          showToast('Tệp JSON không đúng định dạng.', 'error');
+        }
+      };
+      reader.readAsText(file, 'UTF-8');
+      event.target.value = '';
+    }
+
+    // =========================================================================
+    // 15. TỦ HỒ SƠ GOOGLE DRIVE & GEMINI GEM TỪNG PHÒNG
+    // =========================================================================
+    function renderCabinetTab() {
+      const room = ROOMS_DATA.find(r => r.id === selectedRoomId);
+      if (!room) return;
+
+      const saved = linksStore[room.id] || {};
+      document.getElementById('drive-url-input').value = saved.driveUrl || '';
+      document.getElementById('gem-url-input').value = saved.gemUrl || '';
+
+      const checklistEl = document.getElementById('doc-checklist');
+      checklistEl.innerHTML = '';
+      room.checklist.forEach((docTitle, i) => {
+        const checkedKey = `chk_${room.id}_${i}`;
+        const isChecked = !!saved[checkedKey];
+        const li = document.createElement('li');
+        li.className = 'flex items-start gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200/70';
+        li.innerHTML = `
+          <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleDocCheck('${checkedKey}', this.checked)" class="mt-0.5 rounded text-emerald-700 focus:ring-emerald-600" />
+          <span class="${isChecked ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}">${docTitle}</span>
+        `;
+        checklistEl.appendChild(li);
+      });
+    }
+
+    function toggleDocCheck(key, checked) {
+      if (!linksStore[selectedRoomId]) linksStore[selectedRoomId] = {};
+      linksStore[selectedRoomId][key] = checked;
+      saveLinksStore();
+      renderCabinetTab();
+    }
+
+    function saveAgentLinks() {
+      if (!selectedRoomId) return;
+      if (!linksStore[selectedRoomId]) linksStore[selectedRoomId] = {};
+      linksStore[selectedRoomId].driveUrl = document.getElementById('drive-url-input').value.trim();
+      linksStore[selectedRoomId].gemUrl = document.getElementById('gem-url-input').value.trim();
+      saveLinksStore();
+      showToast('Đã lưu liên kết Kho Drive & Gemini Gem!', 'success');
+    }
+
+    function openExternalLink(inputId) {
+      const url = document.getElementById(inputId).value.trim();
+      if (!url) {
+        showToast('Bạn chưa dán đường dẫn URL vào ô này!', 'warning');
+        return;
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
+    // Khởi chạy ứng dụng ngay khi DOM sẵn sàng
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        initMemoryStore();
+        init3DScene();
+      });
+    } else {
+      initMemoryStore();
+      init3DScene();
+    }
+  </script>
+</body>
+</html>
